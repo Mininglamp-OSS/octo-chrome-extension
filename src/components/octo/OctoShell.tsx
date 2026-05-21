@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
 import { WifiOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useAutoSelectFirstConversation } from "@/im/hooks/useAutoSelectFirstConversation";
 import { useImConnectionStatus } from "@/im/hooks/useImConnectionStatus";
 import { useCategoriesUi } from "@/stores/categoriesUi";
 import { useCurrentChannel } from "@/stores/currentChannel";
-import { cn } from "@/utils/cn";
 import { CategoriesManageModal } from "./CategoriesManageModal";
 import { Conversation } from "./Conversation";
 import { ConversationList } from "./ConversationList";
@@ -13,11 +12,10 @@ import { MoveToCategoryDialog } from "./MoveToCategoryDialog";
 import { OctoContactsDrawer } from "./OctoContactsDrawer";
 import { OctoInfoDrawer } from "./OctoInfoDrawer";
 import { PickerDrawer } from "./PickerDrawer";
+import { SidebarTabBar, type ConversationTab } from "./SidebarTabBar";
 import { SidepanelRightColumn } from "./SidepanelRightColumn";
 import { SidepanelTopbar } from "./SidepanelTopbar";
 import { ThreadSheet } from "./ThreadSheet";
-
-type PickerTab = "group" | "dm";
 
 export function OctoShell() {
   const channelId = useCurrentChannel((s) => s.channelId);
@@ -28,9 +26,9 @@ export function OctoShell() {
   const moveTarget = useCategoriesUi((s) => s.moveTarget);
   const closeMoveTo = useCategoriesUi((s) => s.closeMoveTo);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerTab, setPickerTab] = useState<PickerTab>("group");
+  const [pickerTab, setPickerTab] = useState<ConversationTab>("group");
 
-  // 切换 space / 首次加载时：未选中频道则自动选第一条会话（mirror syncPinsAndFirstSelect 等价）
+  // 切换 space / 首次加载时：未选中频道则自动选第一条会话
   useAutoSelectFirstConversation();
 
   // 打开 picker 时记录"进入前的频道"，用户选了新的就自动关 drawer
@@ -65,8 +63,8 @@ export function OctoShell() {
         </div>
       )}
 
-      {/* 主区：左 content + 右 column（rail + footer icons）。
-          主区永远渲染 <Conversation />；选频道走 picker drawer，对齐 mirror 的 OctoSidepanelLayout。 */}
+      {/* mirror OctoSidepanelLayout：主屏永远显 Conversation，rail 在右；
+          切会话靠 PickerDrawer，从左边滑出覆盖在 Conversation 上 */}
       <div className="flex min-h-0 flex-1">
         <div className="min-w-0 flex-1">
           <Conversation />
@@ -74,33 +72,9 @@ export function OctoShell() {
         <SidepanelRightColumn onShowPicker={openPicker} />
       </div>
 
-      {/* picker drawer：mirror wk-sidepanel-picker-drawer 等价。
-          PickerDrawer 自带左滑动画 + rail 蒙层 + 点蒙层关闭 + ESC 关闭。 */}
+      {/* mirror wk-sidepanel-picker-drawer 等价：tab + ConversationList(picker) */}
       <PickerDrawer open={pickerOpen} onClose={() => setPickerOpen(false)}>
-        {/* mirror octo-picker-filter-tabs：胶囊 13px，padding 6px 14px，gap 4px */}
-        <div className="flex shrink-0 gap-1 px-3 pt-2 pb-2.5">
-          {(
-            [
-              { id: "group" as const, label: "群聊" },
-              { id: "dm" as const, label: "私聊" },
-            ]
-          ).map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setPickerTab(t.id)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 text-[13px] transition-colors",
-                pickerTab === t.id
-                  ? "bg-(--color-accent) font-semibold text-(--color-foreground)"
-                  : "text-(--color-muted-foreground) hover:bg-(--color-accent)/40",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
+        <SidebarTabBar activeTab={pickerTab} onTabChange={setPickerTab} />
         <div className="min-h-0 flex-1">
           <ConversationList picker filter={pickerTab} />
         </div>

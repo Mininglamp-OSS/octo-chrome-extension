@@ -1,6 +1,20 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../client";
 import { Endpoints } from "../endpoints";
+import { conversationsQueryKey } from "./conversations";
+
+/**
+ * 私聊 channelId 在 Space 模式下被包成 `s{32hex}_{realUid}`，
+ * 调 `users/{uid}/setting` 必须剥前缀拿真实 uid。
+ * 对应 mirror SpacePrefix.ts + DataSourceModule.extractUID。
+ */
+const SPACE_PREFIX_RE = /^s[0-9a-f]{32}_/;
+function extractRealUid(channelId: string): string {
+  if (SPACE_PREFIX_RE.test(channelId)) {
+    return channelId.substring(channelId.indexOf("_") + 1);
+  }
+  return channelId;
+}
 
 interface ChannelTarget {
   channelId: string;
@@ -86,8 +100,9 @@ export function useExitGroup() {
   });
 }
 
-/** 设置 channel mute/top 等（group 用 groups/:id/setting，private 用 users/:id/setting） */
+/** 设置 channel mute/top 等（group 用 groups/:id/setting，private 用 users/:realUid/setting） */
 export function useUpdateChannelSetting() {
+  const qc = useQueryClient();
   return useMutation({
     async mutationFn({
       channelId,
@@ -96,9 +111,35 @@ export function useUpdateChannelSetting() {
     }: ChannelTarget & { setting: Record<string, unknown> }): Promise<void> {
       const url =
         channelType === 1
-          ? Endpoints.userSetting(channelId)
+          ? Endpoints.userSetting(extractRealUid(channelId))
           : Endpoints.groupSetting(channelId);
       await api.put(url, { json: setting }).json();
     },
+    onSuccess(_, { channelId, channelType }) {
+      // 触发 conversation/sync 重拉 —— stick 字段变更后才能反映到 pinned 排序
+      void qc.invalidateQueries({ queryKey: ["im", "conversations"] });
+      // channelInfo 缓存也失效
+      void qc.invalidateQueries({ queryKey: ["channel", channelType, channelId] });
+    },
   });
 }
+
+/** 切换会话置顶（top=1/0）—— 跟 Rail Pin（/user/pinned）是两套，互不影响。
+ *  后端 setting 接口接收字段名是 `top`（不是 `stick`，stick 仅出现在 conversation/sync 响应里），
+ *  对照 octo-server modules/user/api_setting.go:53 + modules/group/api_setting.go */
+export function useToggleConversationTop() {
+  const update = useUpdateChannelSetting();
+  return {
+    ...update,
+    mutateAsync(payload: ChannelTarget & { top: boolean }) {
+      return update.mutateAsync({
+        channelId: payload.channelId,
+        channelType: payload.channelType,
+        setting: { top: payload.top ? 1 : 0 },
+      });
+    },
+  };
+}
+
+// 防止打包后 conversationsQueryKey 因为只在闭包里间接用被 tree-shake 提示 unused
+void conversationsQueryKey;
