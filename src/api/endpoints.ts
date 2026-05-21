@@ -6,9 +6,13 @@ export const DEFAULT_API_URL =
 /** RESTful 接口路径常量 —— 全部相对路径，由 ky 拼接 baseURL */
 export const Endpoints = {
   // 鉴权
-  login: "user/login",
   logout: "user/logout",
   me: "user/info",
+
+  // SSO / OIDC
+  appconfig: "common/appconfig",
+  thirdloginAuthcode: "user/thirdlogin/authcode",
+  thirdloginAuthstatus: "user/thirdlogin/authstatus",
 
   // 会话
   conversations: "conversation/sync",

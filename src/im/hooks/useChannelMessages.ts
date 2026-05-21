@@ -54,8 +54,6 @@ export function useChannelMessages(
   const inflightRef = useRef(false);
   const hasMoreRef = useRef(true);
   const messagesRef = useRef<MessageView[]>([]);
-  // 本 channel/space 是否已经发起过首次 fetch（避免新消息让 lastSeq 变化时重复拉首页）
-  const fetchedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     messagesRef.current = state.messages;
@@ -68,15 +66,11 @@ export function useChannelMessages(
   // 不再依赖 conversation.lastMessageSeq（之前传 lastSeq+Down 会走另一条 server 分支）。
   useEffect(() => {
     if (!channelId) {
-      fetchedKeyRef.current = null;
       setState({ messages: [], loading: false, loadingMore: false, hasMore: false, error: null });
       inflightRef.current = false;
       hasMoreRef.current = false;
       return;
     }
-    const key = `${channelId}:${channelType}:${spaceId ?? ""}`;
-    if (fetchedKeyRef.current === key) return; // 已为本 key fetch 过，新消息不再重拉历史
-    fetchedKeyRef.current = key;
     let cancelled = false;
     seenIds.current = new Set();
     inflightRef.current = false;
@@ -106,7 +100,6 @@ export function useChannelMessages(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        fetchedKeyRef.current = null; // 失败后允许下次重试
         setState({
           messages: [],
           loading: false,

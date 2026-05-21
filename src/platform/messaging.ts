@@ -40,6 +40,9 @@ export interface OctoProtocolMap {
   authCleared(): void;
   getAuthState(): { auth: AuthState | null };
 
+  /* ===== SSO ===== */
+  startSsoPolling(payload: { authcode: string; windowId: number }): void;
+
   /* ===== Notification 桥：sidepanel SDK → background notifications/badge ===== */
   imMessageReceived(payload: { message: MessageView }): void;
 

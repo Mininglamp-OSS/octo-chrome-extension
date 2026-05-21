@@ -1,7 +1,7 @@
 import { deviceIdStorage } from "./storage";
 
 /**
- * 设备信息 —— 登录时用，后端期望 `flag: number` 和 `device: { device_id, device_name, device_model }`。
+ * 设备信息 —— 后端 API 可选要求带 device 信息。device_id 持久化便于后端识别同一设备。
  * 与 mirror App.tsx 中的 getDeviceIdFromStorage / getOSAndVersion / getBrandsFromUserAgent 行为对齐，
  * 但落盘改用 wxt-storage，避免直接依赖 localStorage。
  */
@@ -11,9 +11,6 @@ export interface DeviceInfo {
   device_name: string;
   device_model: string;
 }
-
-/** 浏览器扩展默认走 deviceFlag = 1（与 mirror requestLoginWithUsernameAndPwd 一致） */
-export const DEVICE_FLAG = 1;
 
 function generateUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {

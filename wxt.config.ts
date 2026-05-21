@@ -19,10 +19,7 @@ export default defineConfig({
     description: "",
     side_panel: { default_path: "sidepanel.html" },
     options_ui: { page: "options.html", open_in_tab: true },
-    permissions: ["notifications", "storage", "sidePanel", "contextMenus", "scripting"],
-    autoIcons: {
-      developmentIndicator: false,
-    },
+    permissions: ["notifications", "storage", "sidePanel", "contextMenus", "scripting", "tabs"],
     host_permissions: ["<all_urls>"],
     web_accessible_resources: [
       {

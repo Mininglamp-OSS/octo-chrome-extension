@@ -1,18 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { LoginResponseSchema } from "./auth";
+import { MeSchema } from "./auth";
 
-describe("LoginResponseSchema", () => {
+describe("MeSchema", () => {
   it("最小响应", () => {
-    expect(LoginResponseSchema.parse({ uid: "u1", token: "t1" })).toEqual({
-      uid: "u1",
-      token: "t1",
-    });
+    expect(MeSchema.parse({ uid: "u1" })).toEqual({ uid: "u1" });
   });
 
   it("完整响应", () => {
-    const out = LoginResponseSchema.parse({
+    const out = MeSchema.parse({
       uid: "u1",
-      token: "t1",
       name: "Alice",
       short_no: "9527",
       sex: 1,
@@ -23,6 +19,6 @@ describe("LoginResponseSchema", () => {
   });
 
   it("缺少 uid → 抛错", () => {
-    expect(() => LoginResponseSchema.parse({ token: "t1" })).toThrow();
+    expect(() => MeSchema.parse({ name: "x" })).toThrow();
   });
 });
