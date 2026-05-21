@@ -1,0 +1,67 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.json",
+      "**/*.css",
+      "!!**/.wxt",
+      "!!**/.output",
+      "!!**/node_modules",
+      "!!src/components/ui"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all",
+      "arrowParentheses": "always"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "style": {
+        "noNonNullAssertion": "warn",
+        "useImportType": "error",
+        "useNodejsImportProtocol": "error"
+      },
+      "suspicious": {
+        "noConsole": { "level": "warn", "options": { "allow": ["warn", "error", "info"] } }
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "complexity": {
+        "noImportantStyles": "off"
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  }
+}

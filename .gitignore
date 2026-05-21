@@ -13,6 +13,11 @@ stats.html
 stats-*.json
 .wxt
 web-ext.config.ts
+web-ext-artifacts/
+
+# Biome / Vitest
+.biome-cache
+coverage/
 
 # Editor directories and files
 .vscode/*
