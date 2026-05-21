@@ -1,4 +1,4 @@
-import { LogIn, ShieldCheck, TriangleAlert } from "lucide-react";
+import { ShieldCheck, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { browser } from "wxt/browser";
 import { useAppConfig } from "@/api/queries/appConfig";
@@ -12,16 +12,21 @@ import { extractErrorMsg } from "@/utils/extractErrorMsg";
 const SSO_POPUP_W = 800;
 const SSO_POPUP_H = 600;
 
+/** 柔光背景：白底 + 左上紫 / 右下蓝，两层超淡 radial */
+const SOFT_BG_STYLE: React.CSSProperties = {
+  backgroundImage: [
+    "radial-gradient(ellipse 80% 60% at 0% 0%, rgba(139,92,246,0.12) 0%, transparent 55%)",
+    "radial-gradient(ellipse 80% 50% at 100% 100%, rgba(56,189,248,0.14) 0%, transparent 55%)",
+  ].join(", "),
+};
+
 export function LoginPage() {
   const appConfig = useAppConfig();
   const providers = appConfig.data?.oidc_providers ?? [];
+  const primary = providers[0];
 
   async function onClickProvider(p: OidcProvider) {
     try {
-      // 必须在 sidepanel 上下文里直接 windows.create —— 这样新窗口的 monitor
-      // 跟随 sidepanel 所在 host window，不会飘到其他显示器。
-      // 放在 background SW 里 create 反而会让 Chrome 把 left/top 解释到
-      // last-focused monitor 的坐标空间，导致跨屏跑偏。
       const authcode = await fetchAuthcode();
       const url = buildAuthorizeUrl({
         authorizePath: p.authorize_path,
@@ -29,9 +34,7 @@ export function LoginPage() {
         returnTo: `${getWebOrigin()}/login`,
       });
       const host = await browser.windows.getCurrent();
-      // 不要 clamp 到 >= 0：多显示器虚拟桌面坐标是有符号的，外接屏在主屏左/上侧
-      // 时 left/top 会是负数，clamp 会让 popup 永远跳到主屏。Chrome 接受全局
-      // 坐标，自己会路由到正确的 monitor。
+      // 多显示器虚拟桌面坐标可能是负数，不要 clamp 到 >= 0，否则 popup 会被强行拽回主屏
       const left =
         host?.left != null && host?.width != null
           ? host.left + Math.round((host.width - SSO_POPUP_W) / 2)
@@ -50,7 +53,6 @@ export function LoginPage() {
         ...(top != null && { top }),
       });
       if (created?.id != null) {
-        // 让 background 接管轮询 + 关窗：sidepanel 关闭也不影响登录完成
         await sendMessage("startSsoPolling", { authcode, windowId: created.id });
       }
     } catch (err) {
@@ -59,57 +61,97 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex h-full flex-col items-center justify-center bg-(--color-background) p-6">
-      <div className="flex w-full max-w-xs flex-col items-center gap-2 pb-6">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-(--color-primary) text-(--color-primary-foreground)">
-          <LogIn className="h-6 w-6" />
-        </div>
-        <h1 className="text-xl font-semibold">登录 Octo</h1>
-        <p className="text-xs text-(--color-muted-foreground)">使用单点登录继续</p>
+    <main className="flex h-full flex-col bg-white px-6 py-10" style={SOFT_BG_STYLE}>
+      {/* 顶部：真实 logo + Octo + 插件版徽章 */}
+      <div className="flex animate-[fade-up_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both] items-center gap-3">
+        <img
+          src="/icon/128.png"
+          alt="Octo"
+          className="h-11 w-11 [filter:drop-shadow(0_6px_14px_rgba(99,102,241,0.45))]"
+          draggable={false}
+        />
+        <span className="text-lg font-extrabold tracking-tight text-slate-900">Octo</span>
+        <span
+          className="ml-auto rounded-full border border-indigo-500/15 bg-indigo-500/8 px-2 py-0.5 text-[10px] font-medium tracking-wide text-indigo-700"
+          style={{ background: "rgba(99,102,241,0.08)" }}
+        >
+          插件版
+        </span>
       </div>
 
-      <Body
-        isPending={appConfig.isPending}
-        isError={appConfig.isError}
-        error={appConfig.error}
-        providers={providers}
-        onRetry={() => appConfig.refetch()}
-        onPick={onClickProvider}
-      />
+      {/* 中部内容 */}
+      <div className="mt-20 flex-1">
+        <h1
+          className="animate-[fade-up_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both] text-3xl font-extrabold leading-tight tracking-tight text-slate-900"
+          style={{ animationDelay: "0.1s" }}
+        >
+          欢迎来到
+          <br />
+          <span
+            className="bg-clip-text text-transparent"
+            style={{
+              backgroundImage: "linear-gradient(135deg, #6366f1 0%, #38bdf8 100%)",
+            }}
+          >
+            Octo
+          </span>
+        </h1>
+        <p
+          className="mt-3 animate-[fade-up_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both] text-[13.5px] leading-relaxed text-slate-500"
+          style={{ animationDelay: "0.2s" }}
+        >
+          AI Agent 时代的即时通讯平台
+          <br />
+          浏览器右侧随开随用，对话不打断当前页面
+        </p>
 
-      <p className="mt-8 text-center text-xs text-(--color-muted-foreground)">
-        登录即表示同意继续连接 dmwork 后端
-      </p>
+        <div
+          className="mt-8 animate-[fade-up_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both]"
+          style={{ animationDelay: "0.3s" }}
+        >
+          <ProviderArea
+            isPending={appConfig.isPending}
+            isError={appConfig.isError}
+            error={appConfig.error}
+            primary={primary}
+            extras={providers.slice(1)}
+            onRetry={() => appConfig.refetch()}
+            onPick={onClickProvider}
+          />
+        </div>
+      </div>
     </main>
   );
 }
 
-function Body({
+function ProviderArea({
   isPending,
   isError,
   error,
-  providers,
+  primary,
+  extras,
   onRetry,
   onPick,
 }: {
   isPending: boolean;
   isError: boolean;
   error: unknown;
-  providers: OidcProvider[];
+  primary: OidcProvider | undefined;
+  extras: OidcProvider[];
   onRetry: () => void;
   onPick: (p: OidcProvider) => void;
 }) {
   if (isPending) {
     return (
-      <div className="flex w-full max-w-xs flex-col gap-2">
-        <div className="h-10 animate-pulse rounded-md bg-(--color-muted)" />
-        <div className="h-3 w-32 animate-pulse self-center rounded bg-(--color-muted)" />
+      <div className="flex flex-col gap-2">
+        <div className="h-12 animate-pulse rounded-xl bg-slate-100" />
+        <div className="h-3 w-44 animate-pulse self-center rounded bg-slate-100" />
       </div>
     );
   }
   if (isError) {
     return (
-      <div className="flex w-full max-w-xs flex-col items-center gap-3 text-center">
+      <div className="flex flex-col items-center gap-3 text-center">
         <TriangleAlert className="h-5 w-5 text-(--color-destructive)" />
         <p className="text-sm text-(--color-destructive)">
           {extractErrorMsg(error) || "加载登录配置失败"}
@@ -120,26 +162,39 @@ function Body({
       </div>
     );
   }
-  if (providers.length === 0) {
+  if (!primary) {
     return (
-      <p className="max-w-xs text-center text-sm text-(--color-muted-foreground)">
-        未配置 SSO Provider，请联系管理员
-      </p>
+      <p className="text-center text-sm text-slate-500">未配置 SSO Provider，请联系管理员</p>
     );
   }
   return (
-    <div className="flex w-full max-w-xs flex-col gap-2">
-      {providers.map((p) => (
-        <Button
-          key={p.id}
-          type="button"
-          className="flex w-full items-center justify-center gap-2"
-          onClick={() => onPick(p)}
-        >
-          <ShieldCheck className="h-4 w-4" />
-          使用 {p.name} 登录
-        </Button>
-      ))}
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => onPick(primary)}
+        className="octo-btn-sso inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl text-sm font-semibold text-white will-change-transform"
+      >
+        <ShieldCheck className="h-[18px] w-[18px]" />
+        使用 {primary.name} 登录
+      </button>
+      <p className="mt-3 text-center text-[11.5px] leading-relaxed text-slate-400">
+        新用户首次点击将自动创建 {primary.name} 账号
+      </p>
+      {extras.length > 0 && (
+        <div className="mt-5 flex flex-col gap-2">
+          {extras.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => onPick(p)}
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
+            >
+              <ShieldCheck className="h-4 w-4 text-slate-400" />
+              使用 {p.name} 登录
+            </button>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

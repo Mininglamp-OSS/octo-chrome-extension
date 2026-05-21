@@ -19,6 +19,9 @@ web-ext-artifacts/
 .biome-cache
 coverage/
 
+# 本地设计稿 / 临时参考
+design/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
