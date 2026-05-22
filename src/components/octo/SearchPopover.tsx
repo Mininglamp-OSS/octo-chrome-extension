@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
@@ -36,16 +37,27 @@ export function SearchPopover() {
   const select = useCurrentChannel((s) => s.select);
   const openLightbox = useUIStore((s) => s.openLightbox);
 
-  // 默认（空 kw）联系人来自 friend/sync 全量；搜索（非空 kw）联系人/群/文件全部来自 /search/global
+  // 联系人默认态用 friend/sync 全量；群组/文件默认态走 POST /search/global 空 kw 兜底（对齐 mirror）
   const { data: friendsData } = useFriends();
+  // mirror OctoSearchPopover：files tab 用 content_type=[8]，其它 tab 空数组
+  const contentTypes = tab === "files" ? [8] : [];
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ["sidepanel-search", spaceId, debouncedKw.trim()],
+    queryKey: ["sidepanel-search", spaceId, debouncedKw.trim(), contentTypes.join(",")],
     enabled: open,
     staleTime: 15_000,
     async queryFn(): Promise<SearchResult> {
-      const searchParams: Record<string, string> = { keyword: debouncedKw.trim() };
-      if (spaceId) searchParams.space_id = spaceId;
-      const raw = await api.get(Endpoints.searchGlobal, { searchParams }).json();
+      const searchParams = spaceId ? { space_id: spaceId } : undefined;
+      const raw = await api
+        .post(Endpoints.searchGlobal, {
+          json: {
+            keyword: debouncedKw.trim(),
+            content_type: contentTypes,
+            page: 1,
+            limit: 20,
+          },
+          ...(searchParams && { searchParams }),
+        })
+        .json();
       return SearchResultSchema.parse(raw);
     },
   });
@@ -63,22 +75,22 @@ export function SearchPopover() {
     setOpen(false);
   }
 
-  // 默认态联系人用 friend/sync（mirror 风格的 4171 全量），最多 50 条避免渲染卡顿；
-  // 群组始终来自 search（空 kw 让后端兜底，没数据就空）；文件空 kw 直接空。
-  const defaultFriends = (friendsData ?? []).slice(0, 50).map((f) => ({
+  // 默认态联系人用 friend/sync 全量（mirror 风格），可滚到底；
+  // 群组/文件默认态来自 /search/global（mirror 后端在空 kw 时会返默认列表）。
+  const allFriends = (friendsData ?? []).map((f) => ({
     uid: f.uid,
     name: f.remark || f.name,
     avatar: f.avatar,
   }));
   const friends = isDefault
-    ? defaultFriends
+    ? allFriends
     : (data?.friends ?? []).map((f) => ({ uid: f.uid, name: f.name, avatar: f.avatar }));
   const groups = data?.groups ?? [];
-  const files = isDefault ? [] : (data?.files ?? []);
+  const files = data?.files ?? [];
   const counts: Record<Tab, number> = {
-    contacts: isDefault ? (friendsData?.length ?? 0) : friends.length,
+    contacts: friends.length,
     groups: groups.length,
-    files: isDefault ? 0 : files.length,
+    files: files.length,
   };
 
   return (
@@ -238,7 +250,7 @@ function ResultList({
         ? groups.map((g) => ({
             key: g.channel_id,
             name: g.name || g.channel_id,
-            sub: "",
+            sub: g.member_count ? `${g.member_count} 人` : "",
             avatar: g.avatar,
             onClick: () => onSelectChannel(g.channel_id, g.channel_type),
           }))
@@ -253,42 +265,74 @@ function ResultList({
   if (!loaded && loading) {
     return <EmptyHint text="加载中…" />;
   }
-  // 文件 Tab 在空 keyword 时不展示「暂无数据」，而是引导用户输入关键字
-  if (items.length === 0 && tab === "files" && keyword.trim() === "") {
-    return <EmptyHint text="输入关键字搜索文件" />;
-  }
   if (items.length === 0) {
     return <EmptyHint text={keyword.trim() === "" ? "暂无数据" : "无匹配结果"} />;
   }
 
+  return <VirtualList items={items} />;
+}
+
+function VirtualList({
+  items,
+}: {
+  items: Array<{
+    key: string;
+    name: string;
+    sub: string;
+    avatar: string | undefined;
+    onClick: () => void;
+  }>;
+}) {
+  const parentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 52,
+    overscan: 8,
+  });
+
   return (
-    <div className="max-h-[360px] overflow-y-auto p-1.5">
-      {items.map((it) => (
-        <button
-          key={it.key}
-          type="button"
-          onClick={it.onClick}
-          className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-(--color-accent)/50"
-        >
-          <Avatar className="h-8 w-8 shrink-0">
-            {it.avatar && <AvatarImage src={it.avatar} alt={it.name} />}
-            <AvatarFallback
-              className="text-[12.5px] font-semibold text-white"
-              style={{ background: avatarGradient(it.name || "?") }}
+    <div ref={parentRef} className="max-h-[360px] overflow-y-auto p-1.5">
+      <div
+        style={{
+          height: rowVirtualizer.getTotalSize(),
+          position: "relative",
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((v) => {
+          const it = items[v.index];
+          if (!it) return null;
+          return (
+            <button
+              key={it.key}
+              type="button"
+              onClick={it.onClick}
+              className="absolute top-0 left-0 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-(--color-accent)/50"
+              style={{ transform: `translateY(${v.start}px)`, height: v.size }}
             >
-              {getFirstChar(it.name || "?")}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="truncate text-[13px] font-medium text-(--color-foreground)">
-              {it.name}
-            </div>
-            {it.sub && (
-              <div className="truncate text-[11.5px] text-(--color-muted-foreground)">{it.sub}</div>
-            )}
-          </div>
-        </button>
-      ))}
+              <Avatar className="h-8 w-8 shrink-0">
+                {it.avatar && <AvatarImage src={it.avatar} alt={it.name} />}
+                <AvatarFallback
+                  className="text-[12.5px] font-semibold text-white"
+                  style={{ background: avatarGradient(it.name || "?") }}
+                >
+                  {getFirstChar(it.name || "?")}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex min-w-0 flex-1 flex-col">
+                <div className="truncate text-[13px] font-medium text-(--color-foreground)">
+                  {it.name}
+                </div>
+                {it.sub && (
+                  <div className="truncate text-[11.5px] text-(--color-muted-foreground)">
+                    {it.sub}
+                  </div>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
