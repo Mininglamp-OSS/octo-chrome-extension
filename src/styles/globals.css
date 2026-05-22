@@ -75,17 +75,6 @@
   #root {
     height: 100%;
   }
-
-  .octo-mention {
-    display: inline-block;
-    padding: 0 4px;
-    margin: 0 1px;
-    border-radius: 4px;
-    /* mirror 同款紫色高亮（与 AI badge 渐变同色系：#7B89F4 → #9D78F5） */
-    background: color-mix(in oklch, #8a82f4 16%, transparent);
-    color: #6d5cf0;
-    font-weight: 600;
-  }
 }
 
 /* LoginPage 入场动画（任意值 animate-[fade-up_...] 引用） */
@@ -433,12 +422,49 @@
   50% { transform: translateX(1px); }
 }
 
-/* mention 节点在 editor 里着色 */
-.octo-composer-editor .ProseMirror .mention,
+/* ================================================================
+   mention chip（方案 A「Slack 软底胶囊」）—— 同时被消息气泡 (octo-md)
+   和 Composer 输入框 ([data-type="mention"]) 复用，保持视觉一致。
+   放在 globals.css（最高加载优先级），避免 Tailwind utility 反向覆盖。
+   ================================================================ */
+.octo-mention,
 .octo-composer-editor .ProseMirror [data-type="mention"] {
-  color: var(--color-primary);
-  font-weight: 600;
-  padding: 0 2px;
+  display: inline-block;
+  background: rgba(99, 102, 241, 0.12);
+  /* indigo-500，与 background 同色系。不能用 var(--color-primary) —— shadcn zinc 主题里 primary 是黑 */
+  color: #6366f1;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.octo-mention:hover,
+.octo-composer-editor .ProseMirror [data-type="mention"]:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+.octo-mention--all {
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+  cursor: default;
+}
+.octo-mention--all:hover {
+  background: rgba(245, 158, 11, 0.15);
+}
+/* 发送方气泡 mention 反转 —— 仅在 message 布局生效。
+   message：发送方气泡是 bg-foreground 深色底，mention 必须反转成白底白字才能看清。
+   cli：气泡背景透明（line 597 transparent !important），跟接收方视觉无区别 → 不反转，
+       继续用 indigo 紫底紫字（跟接收方一致），否则白字在透明底上看不见。 */
+[data-layout="message"] .octo-md--send .octo-mention {
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+[data-layout="message"] .octo-md--send .octo-mention:hover {
+  background: rgba(255, 255, 255, 0.32);
+}
+[data-layout="message"] .octo-md--send .octo-mention--all {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fde68a;
 }
 
 /* ================================================================
@@ -477,19 +503,25 @@
    - 头像列压成 16px 圆点 + 竖线（连续消息只剩竖线）
    - 自己 = 绿色发光圆点；别人 = 灰色圆点
    - 气泡背景/padding/圆角全去掉，13px / 1.6 平铺文本
-   - 名字 12.5px，时间 11px，head 紧凑
-   - 消息间距压到 2px(continue) / 6px(非)
+   - 名字 13px / 600，时间 11px / muted 65%，head 与 body 间留 4px 呼吸
+   - 消息间距：4px (continue) / 16px (不同人首条)
+   - rail 圆点 8×8 + 3px 白环切线，自己消息保留 emerald 呼吸圈
+   - 行 hover：浅底反馈
    对照 mirror packages/dmworkbase/src/Messages/Base/index.css §CLI 段
    ================================================================ */
 [data-layout="cli"] .octo-msg-row {
   flex-direction: row !important;
   gap: 8px !important;
-  margin-top: 2px !important;
+  margin-top: 4px !important;
   padding-left: 12px;
   padding-right: 12px;
+  transition: background 0.12s;
+}
+[data-layout="cli"] .octo-msg-row:hover {
+  background: rgba(15, 23, 42, 0.025);
 }
 [data-layout="cli"] .octo-msg-row.octo-msg-row--first {
-  margin-top: 6px !important;
+  margin-top: 16px !important;
 }
 
 /* 轨道列：始终显示，16px 宽，承载 ::before 圆点 + ::after 竖线 */
@@ -505,31 +537,36 @@
 [data-layout="cli"] .octo-msg-rail > * {
   display: none !important;
 }
+/* 圆点 8×8 + 3px 白环：竖线穿过时被环切断，自然分隔不再"重叠" */
 [data-layout="cli"] .octo-msg-rail::before {
   content: "";
   position: absolute;
   left: 4px;
   top: 6px;
-  width: 7px;
-  height: 7px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--color-muted-foreground);
+  box-shadow: 0 0 0 3px var(--color-background);
   z-index: 1;
 }
+/* 竖线 left:7.5 与圆点中心 (4+8/2 = 8) 精确对齐 */
 [data-layout="cli"] .octo-msg-rail::after {
   content: "";
   position: absolute;
-  left: 7px;
+  left: 7.5px;
   top: 16px;
   bottom: -6px;
   width: 1px;
   background: color-mix(in oklch, var(--color-foreground) 8%, transparent);
 }
 
-/* 自己消息：绿色发光圆点 */
+/* 自己消息：emerald 渐变 + 白环 + 22% 外辉光（呼吸圈） */
 [data-layout="cli"] .octo-msg-row--send .octo-msg-rail::before {
-  background: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.18);
+  background: linear-gradient(135deg, #34d399, #10b981);
+  box-shadow:
+    0 0 0 3px var(--color-background),
+    0 0 0 5px rgba(16, 185, 129, 0.22);
 }
 
 /* 连续消息：圆点隐藏，竖线从 top:0 起 */
@@ -552,15 +589,17 @@
 [data-layout="cli"] .octo-msg-header {
   flex-direction: row !important;
   gap: 6px !important;
-  margin-bottom: 1px;
+  margin-bottom: 4px;
   padding-left: 0 !important;
   padding-right: 0 !important;
 }
 [data-layout="cli"] .octo-msg-name {
-  font-size: 12.5px !important;
+  font-size: 13px !important;
+  font-weight: 600;
 }
 [data-layout="cli"] .octo-msg-time {
   font-size: 11px !important;
+  color: rgba(100, 116, 139, 0.65) !important;
 }
 
 /* body 行：强制 row（覆盖 self 的 flex-row-reverse） */

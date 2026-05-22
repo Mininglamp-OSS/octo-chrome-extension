@@ -27,5 +27,12 @@ export {
   type LottieStickerContent,
   LottieStickerMessage,
 } from "@/messages/lottieSticker";
+export {
+  MERGE_FORWARD_TYPE,
+  type MergeForwardContent,
+  MergeForwardMessage,
+  type MergeForwardSubUI,
+  type MergeForwardUser,
+} from "@/messages/mergeForward";
 export { TEXT_TYPE, type TextContent, TextMessage } from "@/messages/text";
 export { VOICE_TYPE, type VoiceContent, VoiceMessage } from "@/messages/voice";

@@ -113,7 +113,7 @@ const MentionList = forwardRef(function MentionList(
           type="button"
           onClick={() => selectItem(idx)}
           className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
-            idx === selectedIndex ? "bg-(--color-accent)" : ""
+            idx === selectedIndex ? "bg-(--color-primary)/10" : ""
           }`}
         >
           <MemberAvatar row={item} />

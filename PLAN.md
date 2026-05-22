@@ -358,9 +358,9 @@ export default defineBackground(() => {
 - ❌ `Service/Model.tsx`（673 行）里 `React.Component` 写法 — 只挑出纯函数和类型，行为重写
 
 **消息层只抄实际渲染的**（节省 ~60% 代码）：
-- ✅ Text / Image / File / FileContent / LottieSticker / Thread / Voice
+- ✅ Text / Image / File / FileContent / LottieSticker / Thread / Voice / Mergeforward
 - ❌ RTC 音视频通话全家桶（rtcResult/rtcSwitchTo*/rtcCancel/rtcMissed/...）
-- ❌ Screenshot / Mergeforward / Card / Location / Flame / Gif / Video / JoinOrganization / ApproveGroupMember / SignalMessage / SummaryCard / System / Time / Typing / Revoke / HistorySplit / Unsupport
+- ❌ Screenshot / Card / Location / Flame / Gif / Video / JoinOrganization / ApproveGroupMember / SignalMessage / SummaryCard / System / Time / Typing / Revoke / HistorySplit / Unsupport
 - 后续如确实用到再按需补；不预先抄
 
 **Service 层只抄活路径**：
@@ -492,7 +492,7 @@ vite-tsconfig-paths
    - 不抄 mirror 源码，对照行为重写
    - 完全独立，零 web 仓库依赖
    - 不引 cocraft（用户明示）
-   - 不引 mergeforward（边角）
+   - ✅ 已支持 mergeforward（接收侧渲染，contentType=11，2026-05 补）
    - 每改完一块跑 `pnpm typecheck && pnpm lint && pnpm test`
 5. 已知 quirks：
    - WXT `@` 别名自动指 `srcDir` —— 别覆盖

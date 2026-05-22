@@ -13,6 +13,8 @@ import {
   LOTTIE_STICKER_TYPE,
   type LottieStickerContent,
 } from "@/messages/lottieSticker/LottieStickerMessage";
+import { MERGE_FORWARD_TYPE } from "@/messages/mergeForward";
+import { MergeForwardBubble } from "@/messages/mergeForward/MergeForwardBubble";
 import { addMembers } from "@/messages/system/addMembers";
 import { channelUpdate } from "@/messages/system/channelUpdate";
 import { createGroup } from "@/messages/system/createGroup";
@@ -50,6 +52,7 @@ export function registerAllRenders(): void {
   registerRender(LOTTIE_STICKER_TYPE, (({ data }) => (
     <LottieBubble data={data} />
   )) satisfies MessageRender<LottieStickerContent>);
+  registerRender(MERGE_FORWARD_TYPE, MergeForwardBubble);
 
   // system —— 1000-2000 段默认都走 SystemPill；个别 type 自定义
   const systemTypes = [

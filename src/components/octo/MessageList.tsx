@@ -1,8 +1,11 @@
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from "react";
+import { getApiUrl } from "@/api/client";
 import { useChannelMembers } from "@/api/queries/members";
 import { ChannelType } from "@/const/channel";
 import { dedupKey } from "@/im/hooks/useChannelMessages";
 import type { MessageView } from "@/im/message";
+import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
+import { channelAvatarUrl } from "@/utils/avatar";
 import { formatDateSeparator } from "@/utils/time";
 import { MessageBubble } from "./MessageBubble";
 
@@ -85,6 +88,12 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
   }, [members]);
 
   const meta = useMemo(() => buildMeta(messages), [messages]);
+
+  // 头像走统一 URL builder（对照 octo-web App.avatarChannel）：{apiURL}users/{uid}/avatar?v=1。
+  // 后端 members 接口实测不返 avatar 字段，所以不能依赖 memberMap.avatar；URL 拼接是真正的数据源。
+  // 无头像时后端返占位图或 404，AvatarImage onError 落到首字 fallback。
+  const baseURL = getApiUrl();
+  const spaceId = useSpaceStore(selectCurrentSpaceId);
 
   // 是否贴底：onScroll 里更新；append 新消息时是否自动跟随
   const atBottomRef = useRef(true);
@@ -195,6 +204,8 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
         const k = dedupKey(m);
         const md = meta.get(k);
         const info = memberMap.get(m.fromUid);
+        const avatarUrl =
+          info?.avatar || channelAvatarUrl(baseURL, m.fromUid, ChannelType.person, spaceId);
         return (
           <Fragment key={k}>
             {md?.dayLabel && (
@@ -208,7 +219,7 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
               message={m}
               groupedWithPrev={md?.grouped ?? false}
               {...(info?.name && { displayName: info.name })}
-              {...(info?.avatar && { avatarUrl: info.avatar })}
+              {...(avatarUrl && { avatarUrl })}
             />
           </Fragment>
         );

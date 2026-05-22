@@ -3,6 +3,7 @@ import type { AnyMessageModule, MessageRender } from "@/messages/core/defineMess
 import { file } from "@/messages/file";
 import { image } from "@/messages/image";
 import { lottieSticker } from "@/messages/lottieSticker";
+import { mergeForward } from "@/messages/mergeForward";
 import { addMembers } from "@/messages/system/addMembers";
 import { approveGroupMember } from "@/messages/system/approveGroupMember";
 import { channelUpdate } from "@/messages/system/channelUpdate";
@@ -25,6 +26,7 @@ export const MESSAGE_TYPES = [
   voice,
   file,
   lottieSticker,
+  mergeForward, // 11
   // system (1000-2000 段)
   createGroup, // 1001
   addMembers, // 1002

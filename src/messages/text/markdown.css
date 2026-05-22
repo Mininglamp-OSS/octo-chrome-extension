@@ -167,17 +167,9 @@
   opacity: 0.7;
 }
 
-/* ── mention chip（自带，独立于 react-markdown 组件树注入） ── */
-.octo-mention {
-  color: var(--color-primary);
-  cursor: pointer;
-  padding: 0 1px;
-}
-.octo-mention--all {
-  color: #f59e0b;
-  font-weight: 500;
-  cursor: default;
-}
+/* ── mention chip ──
+   样式定义在 src/styles/globals.css（与 Composer 输入框统一来源），
+   这里不再重复定义以避免漂移。 */
 
 /* ── 自定义 emoji（注入到段落内的 <span><img/></span>） ── */
 .octo-rich-emoji {
