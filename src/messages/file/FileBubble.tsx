@@ -31,10 +31,12 @@ export function FileBubble({ data }: { data: FileContent }) {
         if (e.key === "Enter" || e.key === " ") onPreview();
       }}
       title="点击预览"
+      // inline style 强制 maxWidth + minWidth — 反复试 4 版 Tailwind / CSS 都没收敛，
+      // 直接用 React inline style 压过一切 class 规则 / JIT / 缓存问题，必定生效
+      style={{ width: "100%", maxWidth: 280, minWidth: 0 }}
       className={cn(
-        "octo-msg-file flex items-center gap-3 rounded-lg px-3 py-2.5 text-left",
-        "min-w-[200px] max-w-[280px] bg-(--color-foreground)/5 cursor-pointer",
-        "transition-colors hover:bg-(--color-foreground)/10",
+        "octo-msg-file flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left",
+        "cursor-pointer",
       )}
     >
       <div className="flex h-10 w-10 shrink-0 items-center justify-center">

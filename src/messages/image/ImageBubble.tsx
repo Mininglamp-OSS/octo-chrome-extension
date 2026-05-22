@@ -10,12 +10,12 @@ export function ImageBubble({ data }: { data: ImageContent }) {
     <button
       type="button"
       onClick={() => openLightbox({ url: data.url, name: data.name ?? "image" })}
-      className="octo-msg-image block max-w-full overflow-hidden rounded-md"
+      className="octo-msg-image block max-w-[220px] overflow-hidden rounded-[10px]"
     >
       <img
         src={data.url}
         alt={data.name ?? "image"}
-        className="block h-auto max-h-72 w-auto max-w-full rounded-md object-cover"
+        className="block h-auto max-h-[260px] w-auto max-w-[220px] object-cover"
         style={aspectStyle}
         loading="lazy"
       />

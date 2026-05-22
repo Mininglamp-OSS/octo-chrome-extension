@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/utils/cn";
 import type { VoiceContent } from "./VoiceMessage";
 
-export function VoiceBubble({ data, isSelf }: { data: VoiceContent; isSelf: boolean }) {
+export function VoiceBubble({ data }: { data: VoiceContent }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -42,12 +42,7 @@ export function VoiceBubble({ data, isSelf }: { data: VoiceContent; isSelf: bool
 
   return (
     <div
-      className={cn(
-        "octo-msg-voice flex items-center gap-2 rounded-2xl px-3 py-2",
-        isSelf
-          ? "bg-(--color-foreground) text-(--color-background)"
-          : "bg-(--color-muted) text-(--color-foreground)",
-      )}
+      className="octo-msg-voice flex items-center gap-2"
       style={{ minWidth: `${widthCh * 8}px` }}
     >
       <button
@@ -55,30 +50,20 @@ export function VoiceBubble({ data, isSelf }: { data: VoiceContent; isSelf: bool
         onClick={toggle}
         className={cn(
           "flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
-          isSelf
-            ? "bg-(--color-background)/20 hover:bg-(--color-background)/30"
-            : "bg-(--color-foreground)/15 hover:bg-(--color-foreground)/25",
+          "bg-(--color-foreground)/12 hover:bg-(--color-foreground)/20",
         )}
       >
         {playing ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
       </button>
       <div className="min-w-0 flex-1">
-        <div
-          className={cn(
-            "h-1 w-full overflow-hidden rounded-full",
-            isSelf ? "bg-(--color-background)/20" : "bg-(--color-foreground)/15",
-          )}
-        >
+        <div className="h-1 w-full overflow-hidden rounded-full bg-(--color-foreground)/12">
           <div
-            className={cn(
-              "h-full transition-[width] duration-100",
-              isSelf ? "bg-(--color-background)/70" : "bg-(--color-foreground)/70",
-            )}
+            className="h-full bg-(--color-foreground)/55 transition-[width] duration-100"
             style={{ width: `${Math.round(progress * 100)}%` }}
           />
         </div>
       </div>
-      <span className="text-xs tabular-nums opacity-80">{data.timeTrad}″</span>
+      <span className="text-xs tabular-nums text-(--color-muted-foreground)">{data.timeTrad}″</span>
       {/* biome-ignore lint/a11y/useMediaCaption: 用户语音消息无字幕 */}
       <audio ref={audioRef} src={data.url} preload="none" />
     </div>

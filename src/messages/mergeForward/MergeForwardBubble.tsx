@@ -39,14 +39,12 @@ export const MergeForwardBubble: MessageRender<MergeForwardContent> = ({ data })
       type="button"
       onClick={onClick}
       className={cn(
-        "octo-msg-mf relative block w-full text-left transition-shadow",
-        "rounded-lg overflow-hidden",
-        // 主卡白底 + border + 微阴影：父行 hover 变 #f5f5f5 灰时，白卡反向突出（颜色反转）；
-        // 不再用 --color-muted 灰底（和 hover 灰几乎同色 → 糊成一片）。
-        // 嵌套卡在面板内无行 hover 兜底，保留 border hover 反馈。
+        "octo-msg-mf relative block w-full max-w-[300px] text-left",
+        // 主聊天里走「nest 进气泡」卡：父行 .octo-msg-bubble 已退化为 4px 边框，
+        // 这里只画 accent 左竖线 + 浅灰底；嵌套面板里仍用旧的"独立卡"样式。
         isNested
-          ? "max-w-[220px] bg-(--color-background) border border-(--color-border)/70 hover:border-(--color-border)"
-          : "max-w-[300px] bg-(--color-background) border border-(--color-border) shadow-[0_1px_2px_rgba(15,23,42,0.04)] hover:shadow-[0_2px_6px_rgba(15,23,42,0.08)]",
+          ? "max-w-[220px] rounded-lg overflow-hidden bg-(--color-background) border border-(--color-border)/70 hover:border-(--color-border)"
+          : "rounded-r-[10px] overflow-hidden border-l-2 border-(--color-primary)/70 bg-(--color-foreground)/4 hover:bg-(--color-foreground)/6 transition-colors",
       )}
     >
       {isNested && (

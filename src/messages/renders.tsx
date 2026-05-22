@@ -43,8 +43,8 @@ export function registerAllRenders(): void {
   registerRender(IMAGE_TYPE, (({ data }) => (
     <ImageBubble data={data} />
   )) satisfies MessageRender<ImageContent>);
-  registerRender(VOICE_TYPE, (({ data, ctx }) => (
-    <VoiceBubble data={data} isSelf={ctx.isSelf} />
+  registerRender(VOICE_TYPE, (({ data }) => (
+    <VoiceBubble data={data} />
   )) satisfies MessageRender<VoiceContent>);
   registerRender(FILE_TYPE, (({ data }) => (
     <FileBubble data={data} />

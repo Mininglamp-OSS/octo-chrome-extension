@@ -451,21 +451,8 @@
 .octo-mention--all:hover {
   background: rgba(245, 158, 11, 0.15);
 }
-/* 发送方气泡 mention 反转 —— 仅在 message 布局生效。
-   message：发送方气泡是 bg-foreground 深色底，mention 必须反转成白底白字才能看清。
-   cli：气泡背景透明（line 597 transparent !important），跟接收方视觉无区别 → 不反转，
-       继续用 indigo 紫底紫字（跟接收方一致），否则白字在透明底上看不见。 */
-[data-layout="message"] .octo-md--send .octo-mention {
-  background: rgba(255, 255, 255, 0.22);
-  color: #ffffff;
-}
-[data-layout="message"] .octo-md--send .octo-mention:hover {
-  background: rgba(255, 255, 255, 0.32);
-}
-[data-layout="message"] .octo-md--send .octo-mention--all {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fde68a;
-}
+/* mention chip：v2 设计稿统一 indigo 8% 底 + indigo 字，self / other 一致
+   （旧版 self 是黑底反色，需要白字反转；现在 self 是 indigo tint，反转规则去掉） */
 
 /* ================================================================
    消息行 hover / 右键打开 时的整行高亮（对照 mirror MessageRow/index.css）
@@ -495,6 +482,83 @@
 .octo-msg-row > * {
   position: relative;
   z-index: 1;
+}
+
+/* ================================================================
+   消息气泡 v2（对照 .design/messages-v2.html）
+   - 只有文本类消息（type=1 / unknown -1）才画气泡，其余（image/file/voice/sticker/
+     mergeForward）外层 .octo-msg-bubble 透明 + 不约束宽度，让媒体内容自然裸出
+   - 全部消息一律左对齐（.octo-msg-row 在 MessageBubble 上已统一 flex-row）
+   - self / other 视觉一致（同灰底、无边框）—— 靠 grouping 圆角和头像列暗示同人续发
+   - grouping：左侧两角各收 6px（grp-first / mid / last）
+   - max-width 78%（在 .octo-msg-content 上）
+   ================================================================ */
+[data-layout="message"] .octo-msg-bubble {
+  /* 默认透明壳：占据 .octo-msg-content 的可用宽度，不限制内部子元素 —— 媒体类消息
+     的卡片自带视觉、自带 max-width，需要这个父提供明确宽度参考让 truncate 生效 */
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  word-break: break-word;
+}
+[data-layout="message"] .octo-msg-bubble--text {
+  /* 文本气泡：按内容收缩 + 灰底 + 14px 圆角 */
+  display: inline-block;
+  background: color-mix(in oklch, var(--color-foreground) 5%, transparent);
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-foreground);
+}
+
+/* grouping：左侧两角分别收 6px（设计稿 §同人续发，仅文本气泡视觉上有意义） */
+[data-layout="message"] .octo-msg-bubble--text.octo-msg-bubble--grp-first {
+  border-bottom-left-radius: 6px;
+}
+[data-layout="message"] .octo-msg-bubble--text.octo-msg-bubble--grp-mid {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+[data-layout="message"] .octo-msg-bubble--text.octo-msg-bubble--grp-last {
+  border-top-left-radius: 6px;
+}
+
+/* 媒体类气泡（非文本）：强制 align-self: stretch + width:100%，让 .octo-msg-bubble 在
+   .octo-msg-content (flex-col items-start) 父下也占据 100% cross-axis 宽度。
+   不这样的话 block 子项按 shrink-to-fit 计算 width，会被内部 file-card 的
+   max-content（自然展开宽 ≈ icon+全文件名+button ≈ 600px）顶大，绕过 .octo-msg-content
+   的 max-width:78% — 这是连续 4 版 fix 都没收敛的真正失效路径 */
+[data-layout="message"] .octo-msg-bubble:not(.octo-msg-bubble--text) {
+  align-self: stretch;
+  width: 100%;
+}
+
+/* 文件卡：自身灰底 + 圆角，hover 加深；显式写 width / max-width / min-width，
+   不依赖 Tailwind v4 任意值 max-w-[280px]（twMerge / JIT 在某些情况下漏类） */
+[data-layout="message"] .octo-msg-file {
+  width: 100%;
+  max-width: 280px;
+  min-width: 0;
+  background: color-mix(in oklch, var(--color-foreground) 5%, transparent);
+  transition: background 0.12s;
+}
+[data-layout="message"] .octo-msg-file:hover {
+  background: color-mix(in oklch, var(--color-foreground) 9%, transparent);
+}
+
+/* 内容列：用显式 CSS 给 max-width:78% + flex:1 兜底 —— 不依赖 Tailwind JIT 的
+   max-w-[78%] / flex-1 工具类（编译/缓存可能漏类，导致 file-card 撑爆容器） */
+[data-layout="message"] .octo-msg-content {
+  flex: 1 1 0%;
+  min-width: 0;
+  max-width: 78%;
+}
+
+/* 文本气壳内的 markdown shell 透明 —— 视觉壳由外层 .octo-msg-bubble--text 提供 */
+[data-layout="message"] .octo-msg-bubble-shell {
+  background: transparent;
+  padding: 0;
 }
 
 /* ================================================================
@@ -643,6 +707,12 @@
   min-width: 0 !important;
   max-width: 100% !important;
   width: 100%;
+  /* 简化版也要灰底卡片视觉 —— 之前只在 message scope 设了 bg，CLI scope 漏掉 */
+  background: color-mix(in oklch, var(--color-foreground) 5%, transparent);
+  transition: background 0.12s;
+}
+[data-layout="cli"] .octo-msg-file:hover {
+  background: color-mix(in oklch, var(--color-foreground) 9%, transparent);
 }
 [data-layout="cli"] .octo-msg-voice {
   min-width: 0 !important;

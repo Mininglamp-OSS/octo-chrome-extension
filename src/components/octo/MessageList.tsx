@@ -21,6 +21,8 @@ interface MsgMeta {
   dayLabel?: string;
   /** 同人 60s 内合并：头像/名字省略 */
   grouped: boolean;
+  /** 下一条仍是同人续发：用于 grouping 圆角（grp-first / grp-mid 收 BL） */
+  groupedWithNext: boolean;
 }
 
 /** mirror historyScroll.ts:1：上滑离顶 ≤ 250px 触发 loadMore */
@@ -36,8 +38,11 @@ function dayKeyOf(ts: number): string {
 function buildMeta(messages: MessageView[]): Map<string, MsgMeta> {
   const out = new Map<string, MsgMeta>();
   let lastDayKey: string | null = null;
-  let prev: MessageView | null = null;
-  for (const m of messages) {
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (!m) continue;
+    const prev = i > 0 ? messages[i - 1] : null;
+    const next = i < messages.length - 1 ? messages[i + 1] : null;
     const dayKey = dayKeyOf(m.timestamp);
     const isNewDay = dayKey !== lastDayKey;
     const grouped =
@@ -47,12 +52,20 @@ function buildMeta(messages: MessageView[]): Map<string, MsgMeta> {
       m.timestamp - prev.timestamp < 60 &&
       !prev.revoked &&
       !m.revoked;
+    const nextIsNewDay = next != null && dayKeyOf(next.timestamp) !== dayKey;
+    const groupedWithNext =
+      next != null &&
+      !nextIsNewDay &&
+      next.fromUid === m.fromUid &&
+      next.timestamp - m.timestamp < 60 &&
+      !next.revoked &&
+      !m.revoked;
     out.set(dedupKey(m), {
       ...(isNewDay && { dayLabel: formatDateSeparator(new Date(m.timestamp * 1000)) }),
       grouped,
+      groupedWithNext,
     });
     if (isNewDay) lastDayKey = dayKey;
-    prev = m;
   }
   return out;
 }
@@ -193,7 +206,7 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
       ref={scrollerRef}
       onScroll={handleScroll}
       onLoad={handleImageLoad}
-      className="h-full overflow-y-auto"
+      className="h-full overflow-y-auto overflow-x-hidden"
     >
       {(loadingMore || hasMore) && (
         <div className="py-2 text-center text-[11px] text-(--color-muted-foreground)">
@@ -218,6 +231,7 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
             <MessageBubble
               message={m}
               groupedWithPrev={md?.grouped ?? false}
+              groupedWithNext={md?.groupedWithNext ?? false}
               {...(info?.name && { displayName: info.name })}
               {...(avatarUrl && { avatarUrl })}
             />
