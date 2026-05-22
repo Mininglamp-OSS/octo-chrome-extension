@@ -61,7 +61,6 @@ const ICON = {
   attach: (
     <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
   ),
-  expand: <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />,
   send: (
     <>
       <path d="M3.5 11.5L20 4l-3.5 16.5-5-7z" />
@@ -249,10 +248,6 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
     editor.chain().focus().insertContent("@").run();
   }
 
-  function onExpandClick(): void {
-    toast.info("全屏编辑：敬请期待");
-  }
-
   async function handleSend(): Promise<void> {
     if (sending) return;
     const text = getText();
@@ -416,14 +411,6 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
               title="附件"
             >
               <ComposerIcon path={ICON.attach} />
-            </button>
-            <button
-              type="button"
-              className="octo-composer-tool"
-              onClick={onExpandClick}
-              title="全屏编辑"
-            >
-              <ComposerIcon path={ICON.expand} />
             </button>
             <VoiceButton
               channelId={channelId}
