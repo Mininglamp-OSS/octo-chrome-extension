@@ -11,7 +11,7 @@ import { MoveToCategoryDialog } from "./MoveToCategoryDialog";
 import { OctoContactsDrawer } from "./OctoContactsDrawer";
 import { OctoInfoDrawer } from "./OctoInfoDrawer";
 import { PickerDrawer } from "./PickerDrawer";
-import { SidebarTabBar, type ConversationTab } from "./SidebarTabBar";
+import { type ConversationTab, SidebarTabBar } from "./SidebarTabBar";
 import { SidepanelRightColumn } from "./SidepanelRightColumn";
 import { SidepanelTopbar } from "./SidepanelTopbar";
 import { ThreadSheet } from "./ThreadSheet";
@@ -76,9 +76,7 @@ export function OctoShell() {
       <OctoContactsDrawer />
       <MergeForwardPanel />
       <CategoriesManageModal open={manageOpen} onClose={closeManage} />
-      {moveTarget && (
-        <MoveToCategoryDialog open onClose={closeMoveTo} groupNo={moveTarget} />
-      )}
+      {moveTarget && <MoveToCategoryDialog open onClose={closeMoveTo} groupNo={moveTarget} />}
     </div>
   );
 }

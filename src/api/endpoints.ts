@@ -32,6 +32,7 @@ export const Endpoints = {
   // Space
   spaces: "space/my",
   spaceInfo: (spaceId: string) => `space/${spaceId}`,
+  spaceMembers: (spaceId: string) => `space/${spaceId}/members`,
 
   // IM 连接地址
   imRoute: (uid: string) => `users/${uid}/im`,

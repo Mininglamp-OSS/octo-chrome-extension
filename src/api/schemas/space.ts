@@ -23,6 +23,23 @@ export const SpaceSchema = z
 export type Space = z.infer<typeof SpaceSchema>;
 
 /** 后端可能返回 null（无任何 space），统一回退为空数组 */
-export const SpaceListSchema = z
-  .union([z.array(SpaceSchema), z.null()])
+export const SpaceListSchema = z.union([z.array(SpaceSchema), z.null()]).transform((v) => v ?? []);
+
+/** 空间成员（space/{id}/members 列表项） */
+export const SpaceMemberSchema = z
+  .object({
+    uid: z.string(),
+    name: z.string(),
+    avatar: z.string().optional().default(""),
+    /** 1=owner 2=admin 3=member */
+    role: z.number().optional().default(3),
+    /** 0=user 1=bot */
+    robot: z.number().optional().default(0),
+    created_at: z.string().optional().default(""),
+  })
+  .loose();
+export type SpaceMember = z.infer<typeof SpaceMemberSchema>;
+
+export const SpaceMemberListSchema = z
+  .union([z.array(SpaceMemberSchema), z.null()])
   .transform((v) => v ?? []);
