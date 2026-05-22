@@ -1,3 +1,4 @@
+import { AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useRevokeMessage } from "@/api/queries/messages";
 import {
@@ -176,9 +177,24 @@ export function MessageBubble({
             <div
               className={cn("octo-msg-body flex items-center gap-1", isSelf && "flex-row-reverse")}
             >
-              <div className="octo-msg-bubble">
+              <div className={cn("octo-msg-bubble", message.sendFailed && "opacity-70")}>
                 <MessageContentView content={message.content} ctx={renderCtx} />
               </div>
+              {message.sendFailed && (
+                <span
+                  className="inline-flex shrink-0"
+                  title={
+                    message.reasonCode === -1
+                      ? "发送失败：IM 未连接或超时"
+                      : `发送失败 (reasonCode=${message.reasonCode ?? "?"})`
+                  }
+                >
+                  <AlertCircle
+                    className="h-3.5 w-3.5 text-(--color-destructive)"
+                    aria-label="发送失败"
+                  />
+                </span>
+              )}
             </div>
           </div>
         </div>

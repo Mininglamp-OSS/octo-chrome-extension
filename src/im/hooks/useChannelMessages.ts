@@ -54,6 +54,25 @@ export function useChannelMessages(
   const inflightRef = useRef(false);
   const hasMoreRef = useRef(true);
   const messagesRef = useRef<MessageView[]>([]);
+  // stub 的 sendack 超时降级：clientMsgNo → timer id。10s 内若 onImMessageUpdated
+  // 没把这条 stub 升级（messageSeq 仍为 0），就把它标 sendFailed=true。
+  // 这是为了应对 SDK 在 WS 未连接时 fire-and-forget 静默吞失败的情形。
+  const sendTimers = useRef<Map<string, number>>(new Map());
+  const SEND_TIMEOUT_MS = 10_000;
+  const SEND_TIMEOUT_REASON = -1;
+
+  // 用 useCallback 稳定引用，避免 hook deps 触发不必要的 effect 重订阅
+  const clearSendTimer = useCallback((clientMsgNo: string) => {
+    const t = sendTimers.current.get(clientMsgNo);
+    if (t !== undefined) {
+      window.clearTimeout(t);
+      sendTimers.current.delete(clientMsgNo);
+    }
+  }, []);
+  const clearAllSendTimers = useCallback(() => {
+    for (const t of sendTimers.current.values()) window.clearTimeout(t);
+    sendTimers.current.clear();
+  }, []);
 
   useEffect(() => {
     messagesRef.current = state.messages;
@@ -61,6 +80,8 @@ export function useChannelMessages(
   useEffect(() => {
     hasMoreRef.current = state.hasMore;
   }, [state.hasMore]);
+  // 组件 unmount 时清掉所有 sendack 超时计时器，防泄漏
+  useEffect(() => () => clearAllSendTimers(), [clearAllSendTimers]);
 
   // 首次拉：跟 mirror 一致，不传 startMessageSeq / pullMode，让 server 返回"最新一页"。
   // 不再依赖 conversation.lastMessageSeq（之前传 lastSeq+Down 会走另一条 server 分支）。
@@ -75,6 +96,7 @@ export function useChannelMessages(
     seenIds.current = new Set();
     inflightRef.current = false;
     hasMoreRef.current = true;
+    clearAllSendTimers();
     setState({ messages: [], loading: true, loadingMore: false, hasMore: true, error: null });
 
     fetchChannelHistory(channelId, channelType, { limit: PAGE })
@@ -112,7 +134,7 @@ export function useChannelMessages(
     return () => {
       cancelled = true;
     };
-  }, [channelId, channelType, spaceId]);
+  }, [channelId, channelType, spaceId, clearAllSendTimers]);
 
   // 实时收消息
   useEffect(() => {
@@ -123,6 +145,26 @@ export function useChannelMessages(
       const k = dedupKey(m);
       if (seenIds.current.has(k)) return;
       seenIds.current.add(k);
+      // 自己发的 stub（messageSeq===0）开一个 sendack 超时计时器；
+      // onImMessageUpdated 会 clearTimer。超时则标 sendFailed=true。
+      if (m.messageSeq === 0 && m.clientMsgNo) {
+        const cmsg = m.clientMsgNo;
+        const timer = window.setTimeout(() => {
+          sendTimers.current.delete(cmsg);
+          setState((prev) => {
+            let touched = false;
+            const next = prev.messages.map((x) => {
+              if (x.clientMsgNo !== cmsg) return x;
+              if (x.messageSeq !== 0) return x; // 已被 sendack 升级
+              if (x.sendFailed) return x;
+              touched = true;
+              return { ...x, sendFailed: true, reasonCode: SEND_TIMEOUT_REASON };
+            });
+            return touched ? { ...prev, messages: next } : prev;
+          });
+        }, SEND_TIMEOUT_MS);
+        sendTimers.current.set(cmsg, timer);
+      }
       setState((prev) => ({
         ...prev,
         messages: [...prev.messages, m].sort((a, b) => a.messageSeq - b.messageSeq),
@@ -135,12 +177,15 @@ export function useChannelMessages(
     if (!channelId) return;
     return onImMessageUpdated((ev) => {
       if (ev.channelId !== channelId || ev.channelType !== channelType) return;
+      if (ev.clientMsgNo) clearSendTimer(ev.clientMsgNo);
       setState((prev) => {
         let touched = false;
         const next = prev.messages.map((m) => {
           if (m.clientMsgNo !== ev.clientMsgNo) return m;
           touched = true;
-          if (ev.reasonCode !== 0) {
+          // WuKongIM ReasonCode: 0=unknown, 1=success, 2+=各种失败
+          // （见 wukongimjssdk.esm.js ReasonCode 枚举）
+          if (ev.reasonCode !== 1) {
             return { ...m, sendFailed: true, reasonCode: ev.reasonCode };
           }
           return {
@@ -151,11 +196,11 @@ export function useChannelMessages(
           };
         });
         if (!touched) return prev;
-        if (ev.reasonCode === 0 && ev.messageId) seenIds.current.add(ev.messageId);
+        if (ev.reasonCode === 1 && ev.messageId) seenIds.current.add(ev.messageId);
         return { ...prev, messages: next };
       });
     });
-  }, [channelId, channelType]);
+  }, [channelId, channelType, clearSendTimer]);
 
   // 撤回
   useEffect(() => {

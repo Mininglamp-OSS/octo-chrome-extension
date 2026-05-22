@@ -1,7 +1,5 @@
-import { Search } from "lucide-react";
 import { useChannelInfo } from "@/api/queries/channels";
 import { useChannelMembers } from "@/api/queries/members";
-import { Button } from "@/components/ui/button";
 import { ChannelType } from "@/const/channel";
 import { useChannelMessages } from "@/im/hooks/useChannelMessages";
 import { useReadMarker } from "@/im/hooks/useReadMarker";
@@ -10,6 +8,7 @@ import { useCurrentChannel } from "@/stores/currentChannel";
 import { useDrawerStore } from "@/stores/drawer";
 import { Composer } from "./Composer";
 import { MessageList } from "./MessageList";
+import { SearchPopover } from "./SearchPopover";
 
 export function Conversation() {
   const channelId = useCurrentChannel((s) => s.channelId);
@@ -45,9 +44,7 @@ export function Conversation() {
         >
           {title}
         </button>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="搜索">
-          <Search className="h-3.5 w-3.5" />
-        </Button>
+        <SearchPopover />
         {isGroup && memberCount > 0 && (
           <button
             type="button"

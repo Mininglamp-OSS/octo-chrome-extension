@@ -1,12 +1,12 @@
 import WKSDK, {
   Channel,
-  type ChannelInfo as WKChannelInfo,
-  ChannelInfo as WKChannelInfoCtor,
   type ConnectionInfo,
   ConnectStatus,
   type Message,
-  type MessageContent as WKMessageContent,
   type SendackPacket,
+  type ChannelInfo as WKChannelInfo,
+  ChannelInfo as WKChannelInfoCtor,
+  type MessageContent as WKMessageContent,
 } from "wukongimjssdk";
 import { z } from "zod";
 import { api } from "@/api/client";
@@ -67,7 +67,7 @@ async function fetchChannelInfo(channel: Channel): Promise<WKChannelInfo> {
       const logo = d.logo ?? d.avatar;
       if (logo) info.logo = logo;
       info.mute = (d.mute ?? 0) === 1;
-      info.top = ((d.stick ?? d.top) ?? 0) === 1;
+      info.top = (d.stick ?? d.top ?? 0) === 1;
     }
   } catch (err) {
     console.debug("[octo:im] channelInfo not found", channel.channelID, channel.channelType, err);
@@ -137,6 +137,14 @@ const pendingByClientSeq = new Map<
 export function setupIm(): void {
   if (setupDone) return;
   const sdk = WKSDK.shared();
+  // deviceFlag: 0=app, 1=web, 2=pc。SDK 默认 1 (web)；但用户可能同时开
+  // octo-web 网页 + 本扩展，同一 (uid, token, deviceFlag) 服务端只允许一个连接，
+  // 后到的会被秒踢 1006。把扩展标成 2 (pc) 跟 web 端错开槽位，两端可并存。
+  sdk.config.deviceFlag = 2;
+  // 暴露到 window 方便 DevTools Console 调试：WKSDK.shared().config / connectManager.status
+  if (typeof window !== "undefined") {
+    (window as unknown as { WKSDK?: typeof WKSDK }).WKSDK = WKSDK;
+  }
 
   sdk.config.provider.connectAddrCallback = (cb) => {
     const auth = useAuthStore.getState().state;
@@ -144,6 +152,16 @@ export function setupIm(): void {
       console.warn("[octo:im] connectAddrCallback skipped: not logged in");
       return;
     }
+    // 每次（重）连接都会触发此 callback；把 sdk 当前 uid/token 也打一遍，
+    // 方便定位 ConnectPacket 鉴权用的是不是和 store 里一致
+    console.info("[octo:im] connectAddrCallback fired", {
+      storeUid: auth.uid,
+      sdkUid: sdk.config.uid,
+      sdkTokenLen: sdk.config.token?.length ?? 0,
+      sdkTokenHead: sdk.config.token
+        ? `${sdk.config.token.slice(0, 6)}…${sdk.config.token.slice(-4)}`
+        : "(empty)",
+    });
     void resolveAddrs(auth.uid)
       .then((addrs) => {
         console.info("[octo:im] resolveAddrs →", addrs);
@@ -295,7 +313,11 @@ export function startIm(opts: ImBootOptions = {}): void {
   sdk.config.token = token;
 
   if (!connectStarted) {
-    console.info("[octo:im] connectManager.connect()");
+    console.info("[octo:im] connectManager.connect()", {
+      uid,
+      tokenLen: token.length,
+      tokenHead: `${token.slice(0, 6)}…${token.slice(-4)}`,
+    });
     sdk.connectManager.connect();
     connectStarted = true;
   }
@@ -346,10 +368,7 @@ export function onImMessage(listener: (m: Message) => void): () => void {
   return () => sdk.chatManager.removeMessageListener(listener);
 }
 
-export async function sendImMessage(
-  content: WKMessageContent,
-  channel: Channel,
-): Promise<Message> {
+export async function sendImMessage(content: WKMessageContent, channel: Channel): Promise<Message> {
   return WKSDK.shared().chatManager.send(content, channel);
 }
 
