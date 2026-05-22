@@ -1029,3 +1029,209 @@
   font-size: 24px;
   opacity: 0.5;
 }
+
+/* ==== 语音识别（VoiceInputIndicator）—— 像素值对齐 mirror voiceInput.css ==== */
+.octo-voice-button-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border-radius: 4px;
+  transition: background-color 150ms ease;
+}
+.octo-voice-button-group:hover,
+.octo-voice-button-group--active,
+.octo-voice-button-group--active:hover {
+  background-color: var(--color-accent);
+}
+
+.octo-voice-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 4px 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+.octo-voice-button:hover {
+  background-color: var(--color-accent);
+}
+.octo-voice-button-group:hover .octo-voice-button {
+  color: var(--color-foreground);
+}
+.octo-voice-button:active {
+  opacity: 0.7;
+}
+.octo-voice-button--active,
+.octo-voice-button-group:hover .octo-voice-button--active,
+.octo-voice-button-group--active .octo-voice-button {
+  color: var(--color-foreground);
+}
+.octo-voice-button--recording {
+  color: #ef4444;
+  background-color: color-mix(in oklch, #ef4444 18%, transparent);
+  border-radius: 4px;
+}
+.octo-voice-button--disabled {
+  color: var(--color-muted-foreground);
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.octo-voice-button--disabled:hover {
+  color: var(--color-muted-foreground);
+  background-color: transparent;
+}
+.octo-voice-button--preparing {
+  color: var(--color-primary);
+  opacity: 0.6;
+  animation: octo-voice-preparing-pulse 1s ease-in-out infinite;
+}
+@keyframes octo-voice-preparing-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* 箭头 SVG 在按钮内部，inline width/height = 6×4；CSS 只控旋转 */
+.octo-voice-arrow {
+  flex-shrink: 0;
+  transition: transform 200ms ease;
+}
+.octo-voice-arrow--up {
+  transform: rotate(180deg);
+}
+
+/* hover 菜单（两项：语音输入 / 语音编辑），定位锚定按钮 top-right */
+.octo-voice-menu {
+  z-index: 1000;
+  width: 160px;
+  padding: 4px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 12px 28px -10px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.octo-voice-menu-item {
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  font-size: 13px;
+  color: var(--color-foreground);
+  cursor: pointer;
+}
+.octo-voice-menu-item:hover {
+  background: var(--color-accent);
+}
+
+/* portal 浮窗：184×48 椭圆胶囊；定位由 inline style 控制（fixed） */
+.octo-voice-floating-indicator {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: 184px;
+  height: 48px;
+  padding: 4px 16px;
+  box-sizing: border-box;
+  background-color: var(--color-popover);
+  border: 1px solid var(--color-border);
+  border-radius: 1000px;
+  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.08);
+}
+.dark .octo-voice-floating-indicator {
+  box-shadow: 0 0 20px 0 rgba(0, 0, 0, 0.3);
+}
+.octo-voice-floating-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  height: 32px;
+}
+.octo-voice-floating-text {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 22px;
+  color: var(--color-foreground);
+  white-space: nowrap;
+}
+.octo-voice-floating-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 8px;
+  background-color: var(--color-border);
+  flex-shrink: 0;
+}
+
+/* 转写态 spinner：80×24 容器内 20×20 圆环 */
+.octo-voice-transcribing-spinner {
+  width: 80px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.octo-voice-transcribing-spinner::after {
+  content: "";
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in oklch, var(--color-primary) 12%, transparent);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: octo-voice-spin 600ms linear infinite;
+}
+@keyframes octo-voice-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 16 根波形条：80×24 容器，space-between */
+.octo-voice-wave-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 80px;
+  height: 24px;
+  gap: 2px;
+}
+.octo-voice-wave-bar {
+  width: 3px;
+  border-radius: 1.5px;
+  background-color: #ef4444;
+  animation: octo-voice-wave 800ms ease-in-out infinite;
+}
+.octo-voice-wave-bar:nth-child(1)  { animation-delay: 0s; }
+.octo-voice-wave-bar:nth-child(2)  { animation-delay: 0.1s; }
+.octo-voice-wave-bar:nth-child(3)  { animation-delay: 0.2s; }
+.octo-voice-wave-bar:nth-child(4)  { animation-delay: 0.3s; }
+.octo-voice-wave-bar:nth-child(5)  { animation-delay: 0.4s; }
+.octo-voice-wave-bar:nth-child(6)  { animation-delay: 0.5s; }
+.octo-voice-wave-bar:nth-child(7)  { animation-delay: 0.6s; }
+.octo-voice-wave-bar:nth-child(8)  { animation-delay: 0.7s; }
+.octo-voice-wave-bar:nth-child(9)  { animation-delay: 0.6s; }
+.octo-voice-wave-bar:nth-child(10) { animation-delay: 0.5s; }
+.octo-voice-wave-bar:nth-child(11) { animation-delay: 0.4s; }
+.octo-voice-wave-bar:nth-child(12) { animation-delay: 0.3s; }
+.octo-voice-wave-bar:nth-child(13) { animation-delay: 0.2s; }
+.octo-voice-wave-bar:nth-child(14) { animation-delay: 0.1s; }
+.octo-voice-wave-bar:nth-child(15) { animation-delay: 0s; }
+.octo-voice-wave-bar:nth-child(16) { animation-delay: 0.1s; }
+
+@keyframes octo-voice-wave {
+  0%, 100% { height: 6px; }
+  50% { height: 20px; }
+}

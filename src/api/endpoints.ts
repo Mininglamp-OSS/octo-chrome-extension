@@ -66,6 +66,8 @@ export const Endpoints = {
 
   // 语音
   voiceTranscribe: "voice/transcribe",
+  voiceConfig: "voice/config",
+  voiceContext: "voice/context",
 
   // 表情包
   stickerCategories: "sticker/user/category",

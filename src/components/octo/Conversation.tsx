@@ -81,6 +81,10 @@ export function Conversation() {
         channelId={channelId}
         channelType={channelType}
         members={members?.filter((m) => m.uid !== myUid)}
+        messages={messages}
+        {...(channelType === ChannelType.person && info
+          ? { peer: { uid: channelId, name: info.name ?? channelId } as never }
+          : {})}
       />
     </div>
   );

@@ -22,10 +22,12 @@ import {
 import { EmojiPicker } from "@/components/composer/EmojiPicker";
 import { buildMentionInfo, createMentionExtension } from "@/components/composer/mention";
 import { SlashCommandExtension } from "@/components/composer/slash";
-import { VoiceButton } from "@/components/composer/voice/VoiceButton";
+import { buildChatContext } from "@/components/composer/voice/buildChatContext";
+import { VoiceInputIndicator } from "@/components/composer/voice/VoiceInputIndicator";
 import { formatFileSize } from "@/components/octo/FileTypeIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { sendFile, sendImage, sendSticker, sendText } from "@/im/send";
+import { useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { channelKey, useReplyDraft } from "@/stores/replyDraft";
 import { cn } from "@/utils/cn";
@@ -35,6 +37,10 @@ interface ComposerProps {
   channelId: string;
   channelType: number;
   members?: import("@/api/schemas/member").Member[];
+  /** 最近消息（给语音 chat_context 拼接，取最后 10 条） */
+  messages?: import("@/im/message").MessageView[];
+  /** 私聊时对方的 Member（给 memberContext 用） */
+  peer?: import("@/api/schemas/member").Member;
 }
 
 interface PendingAttachment {
@@ -99,14 +105,16 @@ function getAttachmentBadge(file: File): string {
   return "FILE";
 }
 
-export function Composer({ channelId, channelType, members }: ComposerProps) {
+export function Composer({ channelId, channelType, members, messages, peer }: ComposerProps) {
   const [pending, setPending] = useState<PendingAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [textLength, setTextLength] = useState(0);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerCardRef = useRef<HTMLDivElement>(null);
   const theme = usePreferencesStore((s) => s.theme);
   const emojiTheme = theme === "system" ? "auto" : theme;
+  const loginUid = useAuthStore((s) => s.state?.uid ?? "");
   const ck = channelKey(channelId, channelType);
   const reply = useReplyDraft((s) => s.byChannel.get(ck));
   const clearReply = useReplyDraft((s) => s.clear);
@@ -343,7 +351,11 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
       )}
 
       {/* biome-ignore lint/a11y/noStaticElementInteractions: 截获 editor 冒泡的 Enter */}
-      <div className="octo-composer wk-messageinput-box" onKeyDown={onKeyDown}>
+      <div
+        ref={composerCardRef}
+        className="octo-composer wk-messageinput-box"
+        onKeyDown={onKeyDown}
+      >
         {pending.length > 0 && (
           <div className="octo-composer-chips">
             {pending.map((p) => (
@@ -412,13 +424,32 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
             >
               <ComposerIcon path={ICON.attach} />
             </button>
-            <VoiceButton
-              channelId={channelId}
-              channelType={channelType}
-              contextText={getText()}
-              onTranscribed={(t) => {
-                editor?.chain().focus().insertContent(t).run();
+            <VoiceInputIndicator
+              editor={editor}
+              members={members}
+              getCurrentText={getText}
+              getSelectedText={() => {
+                if (!editor) return "";
+                const { from, to } = editor.state.selection;
+                if (from === to) return "";
+                return editor.state.doc.textBetween(from, to, "\n", "\n");
               }}
+              getSelectionRange={() => {
+                if (!editor) return undefined;
+                const { from, to } = editor.state.selection;
+                if (from === to) return undefined;
+                return { from, to };
+              }}
+              getChatContext={() =>
+                buildChatContext({
+                  messages: messages ?? [],
+                  members: members ?? [],
+                  channelType,
+                  loginUid,
+                  ...(peer && { peer }),
+                })
+              }
+              anchorRef={composerCardRef}
             />
             <input ref={fileInputRef} type="file" multiple hidden onChange={onPickFiles} />
           </div>

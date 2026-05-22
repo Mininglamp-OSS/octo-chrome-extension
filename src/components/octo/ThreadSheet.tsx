@@ -50,7 +50,11 @@ export function ThreadSheet() {
         </div>
 
         {current && (
-          <Composer channelId={current.channelId} channelType={current.channelType} />
+          <Composer
+            channelId={current.channelId}
+            channelType={current.channelType}
+            messages={messages}
+          />
         )}
       </SheetContent>
     </Sheet>
