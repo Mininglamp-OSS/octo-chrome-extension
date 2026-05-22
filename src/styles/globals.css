@@ -221,6 +221,31 @@
   color: var(--color-foreground);
 }
 
+/* 收到/自发的消息气泡内 reply 预览块（对照 mirror wk-message-text-reply）。
+   竖线笔直贯穿 → 仅右侧轻微圆角，左侧 0 让 border-left 顶天立地 */
+.octo-msg-reply {
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-left: 2px solid color-mix(in oklch, var(--color-muted-foreground) 50%, transparent);
+  border-radius: 0 4px 4px 0;
+  background: color-mix(in oklch, var(--color-muted) 50%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-muted-foreground);
+  max-width: 100%;
+  overflow: hidden;
+}
+.octo-msg-reply-name {
+  font-weight: 500;
+  color: var(--color-foreground);
+  margin-bottom: 2px;
+}
+.octo-msg-reply-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Chips */
 .octo-composer-chips {
   display: flex;

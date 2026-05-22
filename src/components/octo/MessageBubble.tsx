@@ -106,10 +106,14 @@ export function MessageBubble({
   }
 
   function onReply(): void {
+    const fromName = isSelf ? (myName ?? message.fromUid) : (displayName ?? message.fromUid);
     setDraft(channelKey(message.channelId, message.channelType), {
       messageId: message.messageId,
-      from: message.fromUid,
-      text: digestForReply(message.content),
+      messageSeq: message.messageSeq,
+      fromUid: message.fromUid,
+      fromName,
+      content: message.content,
+      digest: digestForReply(message.content),
     });
   }
 

@@ -4,7 +4,7 @@ import { getImageDimensions, uploadAttachment } from "@/im/upload";
 import type { FileContent } from "@/messages/file";
 import type { ImageContent } from "@/messages/image";
 import type { LottieStickerContent } from "@/messages/lottieSticker";
-import type { TextContent } from "@/messages/text";
+import type { ReplyInfo, TextContent } from "@/messages/text";
 import type { VoiceContent } from "@/messages/voice";
 
 export async function sendText(
@@ -15,7 +15,7 @@ export async function sendText(
     mentionUids?: string[];
     mentionAll?: boolean;
     mentionEntities?: TextContent["mentionEntities"];
-    replyInfo?: TextContent["replyInfo"];
+    replyInfo?: ReplyInfo;
   },
 ): Promise<string> {
   const data: TextContent = { text };

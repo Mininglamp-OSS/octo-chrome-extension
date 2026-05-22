@@ -71,13 +71,7 @@ const ICON = {
   close: <path d="M6 6l12 12M18 6L6 18" />,
 } as const;
 
-function ComposerIcon({
-  path,
-  className,
-}: {
-  path: React.ReactNode;
-  className?: string;
-}) {
+function ComposerIcon({ path, className }: { path: React.ReactNode; className?: string }) {
   return (
     <svg
       className={className}
@@ -98,7 +92,10 @@ function getAttachmentBadge(file: File): string {
   if (file.type.startsWith("image/")) return "IMG";
   const dot = file.name.lastIndexOf(".");
   if (dot > 0) {
-    return file.name.substring(dot + 1).toUpperCase().slice(0, 4);
+    return file.name
+      .substring(dot + 1)
+      .toUpperCase()
+      .slice(0, 4);
   }
   return "FILE";
 }
@@ -276,8 +273,18 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
         }
       }
       if (text) {
+        const replyInfo = reply
+          ? {
+              messageId: reply.messageId,
+              messageSeq: reply.messageSeq,
+              fromUid: reply.fromUid,
+              fromName: reply.fromName,
+              digest: reply.digest,
+              content: reply.content,
+            }
+          : undefined;
         await sendText(channelId, channelType, text, {
-          ...(reply && { replyInfo: reply }),
+          ...(replyInfo && { replyInfo }),
           ...(mentionInfo?.uids.length && { mentionUids: mentionInfo.uids }),
           ...(mentionInfo?.all && { mentionAll: true }),
           ...(mentionInfo?.entities.length && { mentionEntities: mentionInfo.entities }),
@@ -326,8 +333,8 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
         <div className="octo-composer-reply">
           <CornerDownRight className="octo-composer-reply-icon" />
           <div className="octo-composer-reply-body">
-            <div className="octo-composer-reply-name">引用 {reply.from}</div>
-            <div className="octo-composer-reply-text">{reply.text}</div>
+            <div className="octo-composer-reply-name">引用 {reply.fromName}</div>
+            <div className="octo-composer-reply-text">{reply.digest}</div>
           </div>
           <button
             type="button"
@@ -438,11 +445,7 @@ export function Composer({ channelId, channelType, members }: ComposerProps) {
 
           <button
             type="button"
-            className={cn(
-              "octo-composer-send",
-              canSend && "is-active",
-              sending && "is-sending",
-            )}
+            className={cn("octo-composer-send", canSend && "is-active", sending && "is-sending")}
             disabled={!canSend}
             onClick={() => void handleSend()}
             title="发送"

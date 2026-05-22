@@ -1,7 +1,7 @@
 import { BubbleShell } from "@/messages/core/BubbleShell";
 import type { MessageRenderCtx } from "@/messages/core/defineMessageType";
 import { isSingleLargeCustomEmoji, segmentCustomEmoji } from "@/utils/emoji";
-import { MarkdownContent, type EmojiInfo, type MentionInfo } from "./MarkdownContent";
+import { type EmojiInfo, MarkdownContent, type MentionInfo } from "./MarkdownContent";
 import type { MentionEntity, TextContent } from "./TextMessage";
 
 /** entity 区段提取 mention 文本（含 @），供 MarkdownContent 在渲染树上回填 chip */
@@ -72,9 +72,11 @@ function buildEmojis(text: string): EmojiInfo[] {
 
 export function TextBubble({ data, ctx }: { data: TextContent; ctx: MessageRenderCtx }) {
   const large = isSingleLargeCustomEmoji(data.text);
+  const reply = data.replyInfo;
   if (large) {
     return (
       <div className="wk-msg-text-large-emoji octo-msg-large-emoji">
+        {reply && <ReplyPreview reply={reply} />}
         <img src={large.url} alt={large.key} className="block h-[160px] w-[160px] object-contain" />
       </div>
     );
@@ -83,6 +85,7 @@ export function TextBubble({ data, ctx }: { data: TextContent; ctx: MessageRende
   const emojis = buildEmojis(data.text);
   return (
     <BubbleShell isSelf={ctx.isSelf}>
+      {reply && <ReplyPreview reply={reply} />}
       <MarkdownContent
         content={data.text}
         isSend={ctx.isSelf}
@@ -90,5 +93,14 @@ export function TextBubble({ data, ctx }: { data: TextContent; ctx: MessageRende
         emojis={emojis}
       />
     </BubbleShell>
+  );
+}
+
+function ReplyPreview({ reply }: { reply: NonNullable<TextContent["replyInfo"]> }) {
+  return (
+    <div className="octo-msg-reply" title={reply.digest}>
+      <div className="octo-msg-reply-name">{reply.fromName || reply.fromUid}</div>
+      <div className="octo-msg-reply-text">{reply.digest}</div>
+    </div>
   );
 }

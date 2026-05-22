@@ -1,4 +1,8 @@
-import { Mention as WKMention, MessageContent as WKMessageContent } from "wukongimjssdk";
+import {
+  Mention as WKMention,
+  MessageContent as WKMessageContent,
+  Reply as WKReply,
+} from "wukongimjssdk";
 
 /** WKSDK 注册号 —— 模块 index.ts 和 SDK class 共用，避免漂移 */
 export const TEXT_TYPE = 1 as const;
@@ -7,6 +11,28 @@ export interface MentionEntity {
   uid: string;
   offset: number;
   length: number;
+}
+
+/**
+ * 引用消息 UI 投影。
+ *
+ * 协议字段（mirror Conversation 发送 + SDK Reply.decode）：
+ *   { message_id, message_seq, from_uid, from_name, payload }
+ *
+ * - 发送链路：fromUI 把 content（SerializedContent）rehydrate 成 SDK MessageContent，
+ *   组装成 SDK `Reply` 实例赋给 `this.reply`，SDK 基类 encode 自动把它放进
+ *   contentObj.reply。`content` 字段仅在 UI → SDK 这一程使用。
+ * - 接收链路：decodeJSON 从 `this.reply`（SDK 基类已 decode）回填 UI 字段，
+ *   `digest` 从 `reply.content.conversationDigest` 或 contentObj.content 兜底拿。
+ */
+export interface ReplyInfo {
+  messageId: string;
+  messageSeq: number;
+  fromUid: string;
+  fromName: string;
+  digest: string;
+  /** 仅发送链路用 —— 原消息 SerializedContent，转成 SDK Reply.content 用于 payload */
+  content?: unknown;
 }
 
 export interface TextContent {
@@ -18,7 +44,7 @@ export interface TextContent {
   /** mention 精确偏移，渲染时按此高亮 */
   mentionEntities?: MentionEntity[];
   /** 引用消息（reply） */
-  replyInfo?: { messageId: string; from: string; text: string };
+  replyInfo?: ReplyInfo;
 }
 
 /**
@@ -26,16 +52,16 @@ export interface TextContent {
  *   {
  *     "type": 1,
  *     "content": "Hello @张三 @李四",
- *     "mention": { "all": 1, "uids": [...], "entities": [{uid,offset,length},...] }
+ *     "mention": { "all": 1, "uids": [...], "entities": [{uid,offset,length},...] },
+ *     "reply": { message_id, message_seq, from_uid, from_name, payload }
  *   }
- * - mention.all / mention.uids 由 SDK 基类的 encode() 自动生成（前提：this.mention 已赋值），
- *   服务端据此触发 @me 通知、置 ReminderTypeMentionMe；走 mention_uids 之类的平铺字段不会生效。
+ * - mention / reply 字段由 SDK 基类 encode() 自动生成（前提：this.mention / this.reply 已赋值）。
  * - mention.entities 是 mirror 自有扩展，SDK 不识别，我们 override encode() 在 SDK 序列化后注入。
+ * - reply 走 SDK 标准路径，不再用扩展字段绕开。
  */
 export class TextMessage extends WKMessageContent {
   text = "";
   mentionEntities: MentionEntity[] = [];
-  declare replyInfo?: TextContent["replyInfo"];
 
   constructor(text = "") {
     super();
@@ -55,6 +81,22 @@ export class TextMessage extends WKMessageContent {
     return this.mention?.all === true;
   }
 
+  /**
+   * UI 投影的 replyInfo（从 SDK 基类的 this.reply 派生）。无 reply 时返回 undefined。
+   * `digest` 字段留给 text/index.ts 的 toUI 用 registry.digest 兜底派生（避免本类引 registry）
+   */
+  get replyInfo(): ReplyInfo | undefined {
+    const r = this.reply;
+    if (!r) return undefined;
+    return {
+      messageId: r.messageID ?? "",
+      messageSeq: r.messageSeq ?? 0,
+      fromUid: r.fromUID ?? "",
+      fromName: r.fromName ?? "",
+      digest: "",
+    };
+  }
+
   setMention(opts: { all?: boolean; uids?: string[]; entities?: MentionEntity[] }): void {
     const all = opts.all === true;
     const uids = opts.uids ?? [];
@@ -70,10 +112,29 @@ export class TextMessage extends WKMessageContent {
     this.mentionEntities = opts.entities ?? [];
   }
 
+  /**
+   * 设置引用（发送链路用）。content 是 SDK MessageContent 子类实例（原引用消息内容），
+   * 让 SDK Reply.encode 能编出 payload。
+   */
+  setReply(opts: {
+    messageId: string;
+    messageSeq: number;
+    fromUid: string;
+    fromName: string;
+    content?: WKMessageContent;
+  }): void {
+    const r = new WKReply();
+    r.messageID = opts.messageId;
+    r.messageSeq = opts.messageSeq;
+    r.fromUID = opts.fromUid;
+    r.fromName = opts.fromName;
+    if (opts.content) r.content = opts.content;
+    this.reply = r;
+  }
+
   override decodeJSON(content: Record<string, unknown>): void {
     this.text = String(content.content ?? content.text ?? "");
-    // SDK 基类的 decode() 已把 mention.all / mention.uids 写到 this.mention；
-    // 这里只读 entities（SDK 不识别）和 reply。
+    // SDK 基类的 decode() 已把 mention / reply 填好；这里只读 mention.entities（SDK 不识别）。
     const m = content.mention as Record<string, unknown> | undefined;
     const entities = m?.entities;
     this.mentionEntities = Array.isArray(entities)
@@ -89,20 +150,6 @@ export class TextMessage extends WKMessageContent {
           })
           .filter((e): e is MentionEntity => e !== null)
       : [];
-    const r = content.reply;
-    if (r && typeof r === "object") {
-      const obj = r as Record<string, unknown>;
-      const payload = obj.payload;
-      const text =
-        payload && typeof payload === "object"
-          ? String((payload as Record<string, unknown>).content ?? "")
-          : "";
-      this.replyInfo = {
-        messageId: String(obj.message_id ?? ""),
-        from: String(obj.from_uid ?? ""),
-        text,
-      };
-    }
   }
 
   override encodeJSON(): Record<string, unknown> {
