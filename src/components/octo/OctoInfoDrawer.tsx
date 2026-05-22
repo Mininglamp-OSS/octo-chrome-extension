@@ -22,10 +22,17 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { getApiUrl } from "@/api/url";
 import { ChannelType } from "@/const/channel";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useDrawerStore } from "@/stores/drawer";
-import { avatarGradient, getFirstChar } from "@/utils/avatar";
+import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
+import {
+  avatarGradient,
+  channelAvatarUrl,
+  getFirstChar,
+  resolveImageURL,
+} from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
 
@@ -58,6 +65,15 @@ export function OctoInfoDrawer() {
   const [nameDraft, setNameDraft] = useState("");
 
   const muted = (info?.mute ?? 0) === 1;
+
+  const spaceId = useSpaceStore(selectCurrentSpaceId);
+  const baseURL = getApiUrl();
+  const channelLogo = info?.logo?.trim() || info?.avatar?.trim();
+  const channelAvatarSrc = channelLogo
+    ? resolveImageURL(baseURL, channelLogo)
+    : channelId
+      ? channelAvatarUrl(baseURL, channelId, channelType, spaceId)
+      : "";
 
   async function togglePin(): Promise<void> {
     if (!channelId) return;
@@ -132,7 +148,9 @@ export function OctoInfoDrawer() {
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col items-center gap-2 px-4 py-5">
             <Avatar className="h-16 w-16">
-              {info?.avatar && <AvatarImage src={info.avatar} alt={info.name ?? ""} />}
+              {channelAvatarSrc && (
+                <AvatarImage src={channelAvatarSrc} alt={info?.name ?? ""} />
+              )}
               <AvatarFallback
                 className="text-lg text-white"
                 style={{ background: avatarGradient(info?.name ?? channelId ?? "") }}
@@ -169,7 +187,6 @@ export function OctoInfoDrawer() {
                 )}
               </div>
             )}
-            <span className="text-[11px] text-(--color-muted-foreground)">{channelId}</span>
           </div>
 
           <Separator />
@@ -261,24 +278,32 @@ function MemberGroup({
   title: string;
   members: Array<{ uid: string; name: string; avatar?: string }>;
 }) {
+  const baseURL = getApiUrl();
   return (
     <div className="mb-3">
       <p className="mb-1 text-[10px] text-(--color-muted-foreground)">{title}</p>
       <div className="flex flex-wrap gap-2">
-        {members.slice(0, 30).map((m) => (
-          <div key={m.uid} className="flex w-12 flex-col items-center gap-1">
-            <Avatar className="h-9 w-9">
-              {m.avatar && <AvatarImage src={m.avatar} alt={m.name} />}
-              <AvatarFallback
-                className="text-[10px] text-white"
-                style={{ background: avatarGradient(m.name) }}
-              >
-                {getFirstChar(m.name)}
-              </AvatarFallback>
-            </Avatar>
-            <span className="w-full truncate text-center text-[10px]">{m.name}</span>
-          </div>
-        ))}
+        {members.slice(0, 30).map((m) => {
+          const memberAvatar = m.avatar?.trim()
+            ? resolveImageURL(baseURL, m.avatar)
+            : baseURL
+              ? `${baseURL}users/${m.uid}/avatar?v=1`
+              : "";
+          return (
+            <div key={m.uid} className="flex w-12 flex-col items-center gap-1">
+              <Avatar className="h-9 w-9">
+                {memberAvatar && <AvatarImage src={memberAvatar} alt={m.name} />}
+                <AvatarFallback
+                  className="text-[10px] text-white"
+                  style={{ background: avatarGradient(m.name) }}
+                >
+                  {getFirstChar(m.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="w-full truncate text-center text-[10px]">{m.name}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
