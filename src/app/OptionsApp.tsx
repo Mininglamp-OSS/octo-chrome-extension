@@ -70,20 +70,6 @@ export function OptionsApp() {
         </p>
       </Section>
 
-      <Section title="通知" desc="关闭后将不再接收新消息提醒">
-        <Toggle
-          label="消息通知（角标 + 系统）"
-          checked={prefs.notificationsEnabled}
-          onChange={(v) => void setPrefs({ notificationsEnabled: v })}
-        />
-        <Toggle
-          label="系统弹窗"
-          checked={prefs.notificationsVisible}
-          onChange={(v) => void setPrefs({ notificationsVisible: v })}
-          disabled={!prefs.notificationsEnabled}
-        />
-      </Section>
-
       <Section title="外观">
         <div className="flex items-center gap-2">
           {(["light", "dark", "system"] as const).map((mode) => (
@@ -143,34 +129,5 @@ function Section({
       </div>
       <div className="flex flex-col gap-2">{children}</div>
     </section>
-  );
-}
-
-function Toggle({
-  label,
-  checked,
-  onChange,
-  disabled,
-}: {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <label
-      className={`flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${
-        disabled ? "opacity-50" : "cursor-pointer"
-      }`}
-    >
-      <span>{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        disabled={disabled}
-        className="h-4 w-4"
-      />
-    </label>
   );
 }

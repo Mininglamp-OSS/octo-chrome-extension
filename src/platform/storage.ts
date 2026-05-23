@@ -27,8 +27,6 @@ export interface PendingConversation {
 }
 
 export interface Preferences {
-  notificationsEnabled: boolean;
-  notificationsVisible: boolean;
   /** 自定义 API 根地址；空表示走默认 */
   apiUrl: string;
   /** 阅读模式：消息版（默认气泡）/ 简化版（终端风紧凑） —— 对齐 mirror data-layout */
@@ -36,8 +34,6 @@ export interface Preferences {
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
-  notificationsEnabled: true,
-  notificationsVisible: true,
   apiUrl: "",
   layout: "message",
 };

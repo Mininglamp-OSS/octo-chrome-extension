@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import { setApiUrl } from "@/api/client";
 import { DEFAULT_API_URL } from "@/api/endpoints";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
-import { onImMessage, setupIm, startIm, stopIm } from "@/im/client";
-import { toMessageView } from "@/im/message";
+import { setupIm, startIm, stopIm } from "@/im/client";
 import { registerAllRenders } from "@/messages/renders";
-import { sendMessage } from "@/platform/messaging";
 import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -79,12 +77,7 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
     if (selectIsLogined(useAuthStore.getState())) {
       startIm();
     }
-    // sidepanel SDK 收到的消息 forward 给 background，让通知 / badge 能继续工作
-    const off = onImMessage((m) => {
-      void sendMessage("imMessageReceived", { message: toMessageView(m) }).catch(() => {});
-    });
     return () => {
-      off();
       stopIm();
     };
   }, [ready]);
