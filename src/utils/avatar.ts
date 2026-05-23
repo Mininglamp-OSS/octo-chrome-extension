@@ -48,6 +48,28 @@ export function resolveImageURL(baseURL: string, path: string): string {
 /** IM 层经常把私聊 channelId 包成 `s{spaceId}_{uid}`，剥前缀拿真实 uid。 */
 const SPACE_PREFIX_RE = /^s[0-9A-Za-z]+_/;
 
+/** 把 person 私聊 channelId 还原成真实 uid（剥 `s{spaceId}_` 前缀）。 */
+export function stripSpacePrefix(channelId: string, spaceId?: string | null): string {
+  let uid = channelId;
+  if (spaceId && uid.startsWith(`s${spaceId}_`)) {
+    uid = uid.slice(`s${spaceId}_`.length);
+  } else if (SPACE_PREFIX_RE.test(uid)) {
+    uid = uid.replace(SPACE_PREFIX_RE, "");
+  }
+  return uid;
+}
+
+const avatarTags = new Map<string, string>();
+
+function getDefaultAvatarTag(channelId: string, channelType: number): string {
+  const key = `${channelType}:${channelId}`;
+  const existing = avatarTags.get(key);
+  if (existing) return existing;
+  const tag = Date.now().toString();
+  avatarTags.set(key, tag);
+  return tag;
+}
+
 /**
  * mirror App.avatarChannel 等价：按 channel 类型拼后端约定的头像 URL。
  * - person: `{api}users/{uid}/avatar`；channelId 形如 `s{spaceId}_{uid}` 时剥前缀
@@ -65,17 +87,10 @@ export function channelAvatarUrl(
   cacheTag?: string,
 ): string {
   if (!channelId || !baseURL) return "";
-  const tag = cacheTag ?? "1";
+  const tag = cacheTag ?? getDefaultAvatarTag(channelId, channelType);
 
-  if (channelType === ChannelType.person) {
-    let uid = channelId;
-    // 优先按当前 spaceId 精确剥；不匹配时再用通用正则兜底（IM 实测：当 currentSpaceId
-    // 为 null，channelId 仍可能带 sXXX_ 前缀）
-    if (spaceId && uid.startsWith(`s${spaceId}_`)) {
-      uid = uid.slice(`s${spaceId}_`.length);
-    } else if (SPACE_PREFIX_RE.test(uid)) {
-      uid = uid.replace(SPACE_PREFIX_RE, "");
-    }
+  if (channelType === ChannelType.person || channelType === ChannelType.customerService) {
+    const uid = stripSpacePrefix(channelId, spaceId);
     return `${baseURL}users/${uid}/avatar?v=${tag}`;
   }
   if (channelType === ChannelType.group) {
@@ -86,4 +101,31 @@ export function channelAvatarUrl(
     if (parent) return `${baseURL}groups/${parent}/avatar?v=${tag}`;
   }
   return "";
+}
+
+/**
+ * person 头像 src 解析（统一入口），对齐 octo-web `WKApp.avatarChannel`：
+ *  1. channelInfo.logo/avatar —— 先信任频道信息；强制加 `?v={tag}` cache buster，
+ *     避免浏览器把首次 404 缓存住导致一直显首字 fallback
+ *  2. channelAvatarUrl(person) —— 兜底 `users/{uid}/avatar?v={tag}`
+ */
+export function resolvePersonAvatar(opts: {
+  baseURL: string;
+  channelId: string;
+  spaceId?: string | null;
+  logo?: string;
+  cacheTag?: string;
+}): string {
+  const { baseURL, channelId, spaceId, logo, cacheTag } = opts;
+  if (!channelId || !baseURL) return "";
+  const tag = cacheTag ?? getDefaultAvatarTag(channelId, ChannelType.person);
+
+  const fromLogo = logo?.trim();
+  if (fromLogo) {
+    // mirror App.avatarChannel 等价：logo 已带 `?` 用 `&v=`，否则 `?v=`
+    const sep = fromLogo.includes("?") ? "&" : "?";
+    return resolveImageURL(baseURL, `${fromLogo}${sep}v=${tag}`);
+  }
+
+  return channelAvatarUrl(baseURL, channelId, ChannelType.person, spaceId, tag);
 }

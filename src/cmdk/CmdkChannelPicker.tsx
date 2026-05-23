@@ -15,6 +15,7 @@ import {
   channelAvatarUrl,
   getFirstChar,
   resolveImageURL,
+  resolvePersonAvatar,
 } from "@/utils/avatar";
 
 export interface PickedTarget {
@@ -43,10 +44,10 @@ const keyOf = (t: { channelType: number; channelId: string }) =>
   `${t.channelType}:${t.channelId}`;
 
 function typeBadge(type: number): string {
-  if (type === ChannelType.person) return "@";
-  if (type === ChannelType.group) return "#";
-  if (type === ChannelType.communityTopic) return "↳";
-  return "·";
+  if (type === ChannelType.person) return "联系人";
+  if (type === ChannelType.group) return "频道";
+  if (type === ChannelType.communityTopic) return "子区";
+  return "其他";
 }
 
 function highlight(name: string, kw: string): React.ReactNode {
@@ -111,15 +112,30 @@ export function CmdkChannelPicker({
   // ── 派生四类 targets ──
 
   // 1) 最近：person + group + topic 全收（保留 conversation 顺序：pin / 时间已在源里）
+  //   person 头像优先级（resolvePersonAvatar）：personAvatarByUid.get(uid) > channelInfo.logo > users/{uid}/avatar 兜底
+  //   bot 用户在 personAvatarByUid 里有真实 CDN URL，否则 users/{uid}/avatar 大概率 404 → 落首字 fallback
+
   const recentTargets = useMemo<PickedTarget[]>(() => {
     const baseURL = getApiUrl();
     return conversations.map((c, i) => {
       const info = recentInfoQueries[i]?.data;
       const name = info?.remark?.trim() || info?.name?.trim() || c.channelId;
-      const logo = info?.logo?.trim();
-      const avatar = logo
-        ? resolveImageURL(baseURL, logo)
-        : channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
+      let avatar: string | undefined;
+      if (c.channelType === ChannelType.person) {
+        avatar = resolvePersonAvatar({
+          baseURL,
+          channelId: c.channelId,
+          spaceId,
+          ...(info?.logo?.trim() || info?.avatar?.trim()
+            ? { logo: info?.logo?.trim() || info?.avatar?.trim() }
+            : {}),
+        });
+      } else {
+        const logoFromInfo = info?.logo?.trim() || info?.avatar?.trim();
+        avatar = logoFromInfo
+          ? resolveImageURL(baseURL, logoFromInfo)
+          : channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
+      }
       return {
         channelId: c.channelId,
         channelType: c.channelType,
@@ -134,9 +150,12 @@ export function CmdkChannelPicker({
     const baseURL = getApiUrl();
     return (friends ?? []).map((f) => {
       const name = f.remark?.trim() || f.name;
-      const avatar = f.avatar
-        ? resolveImageURL(baseURL, f.avatar)
-        : channelAvatarUrl(baseURL, f.uid, ChannelType.person, spaceId);
+      const avatar = resolvePersonAvatar({
+        baseURL,
+        channelId: f.uid,
+        spaceId,
+        ...(f.avatar?.trim() && { logo: f.avatar }),
+      });
       return {
         channelId: f.uid,
         channelType: ChannelType.person,
@@ -318,7 +337,20 @@ export function CmdkChannelPicker({
             >
               <Avatar className="h-6 w-6 shrink-0">
                 {r.target.avatar && (
-                  <AvatarImage src={r.target.avatar} alt={r.target.name} />
+                  <AvatarImage
+                    src={r.target.avatar}
+                    alt={r.target.name}
+                    onLoadingStatusChange={(s) => {
+                      if (s === "error")
+                        console.warn(
+                          "[cmdk avatar load failed]",
+                          r.target?.name,
+                          r.target?.channelType,
+                          r.target?.channelId,
+                          r.target?.avatar,
+                        );
+                    }}
+                  />
                 )}
                 <AvatarFallback
                   className="text-[10px] font-semibold text-white"
@@ -335,7 +367,7 @@ export function CmdkChannelPicker({
                   当前
                 </span>
               )}
-              <span className="inline-flex h-5 w-[18px] shrink-0 items-center justify-center text-[12px] font-semibold text-(--color-muted-foreground)/70">
+              <span className="inline-flex shrink-0 items-center rounded-full bg-(--color-muted)/60 px-1.5 py-0.5 text-[10px] font-medium text-(--color-muted-foreground)">
                 {typeBadge(r.target.channelType)}
               </span>
             </button>

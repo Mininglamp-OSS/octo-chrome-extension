@@ -15,6 +15,7 @@ import { AtSign, Hash, Layers, Pin } from "lucide-react";
 import { type CSSProperties, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, getApiUrl } from "@/api/client";
+import { Endpoints } from "@/api/endpoints";
 import {
   useCategories,
   useMoveGroupToCategory,
@@ -25,7 +26,6 @@ import {
   useClearUnread,
   useToggleConversationTop,
 } from "@/api/queries/channelActions";
-import { Endpoints } from "@/api/endpoints";
 // /user/pinned (Rail Pin) 与会话置顶 (stick) 是两套，本文件不再使用 Rail Pin 数据
 import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -52,6 +52,7 @@ import {
   channelAvatarUrl,
   getFirstChar,
   resolveImageURL,
+  resolvePersonAvatar,
 } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
@@ -150,6 +151,18 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
   function resolveAvatarUrl(c: ConversationView): string {
     const info = infoByKey.get(`${c.channelId}:${c.channelType}`);
     const baseURL = getApiUrl();
+    if (
+      c.channelType === ChannelType.person ||
+      c.channelType === ChannelType.customerService
+    ) {
+      const logo = info?.logo?.trim();
+      return resolvePersonAvatar({
+        baseURL,
+        channelId: c.channelId,
+        spaceId,
+        ...(logo && { logo }),
+      });
+    }
     const logo = info?.logo?.trim();
     if (logo) return resolveImageURL(baseURL, logo);
     return channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);

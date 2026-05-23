@@ -5,11 +5,10 @@ import { getApiUrl } from "@/api/client";
 import { MessageAvatar } from "@/components/octo/MessageAvatar";
 import { MessageContentView } from "@/components/octo/MessageContent";
 import { Sheet, SheetPortal } from "@/components/ui/sheet";
-import { ChannelType } from "@/const/channel";
 import type { MessageRenderCtx } from "@/messages/core/defineMessageType";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
 import { useUIStore } from "@/stores/ui";
-import { channelAvatarUrl } from "@/utils/avatar";
+import { resolvePersonAvatar } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { formatMessageTime } from "@/utils/time";
 import type { MergeForwardContent, MergeForwardSubUI, MergeForwardUser } from "./index";
@@ -136,9 +135,8 @@ function PanelBody({ content }: { content: MergeForwardContent }) {
     return m;
   }, [content.users]);
 
-  // 头像走统一 URL builder（对照 octo-web App.avatarChannel）：
-  // {apiURL}users/{uid}/avatar?v=1。后端没设头像时返回占位图或 404，AvatarImage onError 自动落到首字 fallback。
-  // 不需要 useChannelMembers / channelManager 查表 —— 那些路径在我们后端不一定有 avatar 字段。
+  // 头像走 resolvePersonAvatar：channelInfo.logo → users/{uid}/avatar?v={tag} 兜底；
+  // 与 octo-web WKApp.avatarChannel 一致。
   const baseURL = getApiUrl();
   const spaceId = useSpaceStore(selectCurrentSpaceId);
 
@@ -150,12 +148,17 @@ function PanelBody({ content }: { content: MergeForwardContent }) {
           !!prev &&
           prev.fromUid === m.fromUid &&
           Math.abs(m.timestamp - prev.timestamp) <= GROUP_WINDOW_SEC;
-        const avatar = channelAvatarUrl(baseURL, m.fromUid, ChannelType.person, spaceId);
+        const user = userMap.get(m.fromUid);
+        const avatar = resolvePersonAvatar({
+          baseURL,
+          channelId: m.fromUid,
+          spaceId,
+        });
         return (
           <SubMessageRow
             key={subKey(m, i)}
             sub={m}
-            user={userMap.get(m.fromUid)}
+            user={user}
             avatar={avatar}
             grouped={grouped}
           />

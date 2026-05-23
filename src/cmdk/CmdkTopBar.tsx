@@ -1,5 +1,7 @@
 import { ChevronDown, X } from "lucide-react";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ChannelType } from "@/const/channel";
+import { avatarGradient, getFirstChar } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import type { PickedTarget } from "./CmdkChannelPicker";
 
@@ -12,6 +14,13 @@ interface CmdkTopBarProps {
 }
 
 const BRAND_GRADIENT = "linear-gradient(135deg, #7C5CFC 0%, #00D4AA 100%)";
+
+function typeLabel(type: number): string {
+  if (type === ChannelType.person) return "联系人";
+  if (type === ChannelType.group) return "频道";
+  if (type === ChannelType.communityTopic) return "子区";
+  return "其他";
+}
 
 export function CmdkTopBar({
   target,
@@ -58,11 +67,20 @@ export function CmdkTopBar({
           {target ? (
             <>
               <Avatar className="h-[18px] w-[18px]">
-                <AvatarFallback className="rounded-md bg-(--color-muted) text-[9px] font-medium text-(--color-foreground)/80">
-                  {target.channelType === 2 ? "#" : "@"}
+                {target.avatar && (
+                  <AvatarImage src={target.avatar} alt={target.name} />
+                )}
+                <AvatarFallback
+                  className="rounded-md text-[9px] font-semibold text-white"
+                  style={{ background: avatarGradient(target.name) }}
+                >
+                  {getFirstChar(target.name)}
                 </AvatarFallback>
               </Avatar>
               <span className="max-w-[160px] truncate">{target.name}</span>
+              <span className="rounded-full bg-(--color-background)/70 px-1.5 py-0.5 text-[10px] font-medium text-(--color-muted-foreground)">
+                {typeLabel(target.channelType)}
+              </span>
             </>
           ) : (
             <span className="text-(--color-muted-foreground)">选择目标</span>

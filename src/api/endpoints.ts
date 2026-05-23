@@ -1,3 +1,5 @@
+import { stripSpacePrefix } from "@/utils/avatar";
+
 /** API base URL. 来自 VITE_API_URL 环境变量，缺省为 mirror 默认值 */
 export const DEFAULT_API_URL =
   (import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL ??
@@ -16,7 +18,14 @@ export const Endpoints = {
 
   // 会话
   conversations: "conversation/sync",
-  channelInfo: (channelId: string, channelType: number) => `channels/${channelId}/${channelType}`,
+  /**
+   * mirror DataSourceModule.setChannelInfoCallback 等价：传给后端的 channelId 必须是真实 uid/group_no，
+   * 不能带 `s{spaceId}_` 前缀。stripSpacePrefix 的 regex 只匹配 `^s[0-9A-Za-z]+_`，
+   * 对 group_no（纯数字）/ topic（`t...`）不匹配，统一调用安全。
+   * 不剥前缀的话，后端找不到对应 user，logo 字段返回空 → bot 头像落 fallback。
+   */
+  channelInfo: (channelId: string, channelType: number) =>
+    `channels/${stripSpacePrefix(channelId)}/${channelType}`,
   /** 拉取频道历史消息（mirror: message/channel/sync） */
   messageChannelSync: "message/channel/sync",
 

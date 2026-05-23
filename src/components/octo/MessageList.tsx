@@ -1,11 +1,14 @@
+import { useQueries } from "@tanstack/react-query";
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from "react";
-import { getApiUrl } from "@/api/client";
+import { api, getApiUrl } from "@/api/client";
+import { Endpoints } from "@/api/endpoints";
 import { useChannelMembers } from "@/api/queries/members";
+import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
 import { ChannelType } from "@/const/channel";
 import { dedupKey } from "@/im/hooks/useChannelMessages";
 import type { MessageView } from "@/im/message";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
-import { channelAvatarUrl } from "@/utils/avatar";
+import { resolvePersonAvatar } from "@/utils/avatar";
 import { formatDateSeparator } from "@/utils/time";
 import { MessageBubble } from "./MessageBubble";
 
@@ -99,12 +102,30 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
     }
     return m;
   }, [members]);
+  const senderUids = useMemo(() => Array.from(new Set(messages.map((m) => m.fromUid))), [messages]);
+  const senderInfoQueries = useQueries({
+    queries: senderUids.map((uid) => ({
+      queryKey: ["channel", ChannelType.person, uid],
+      async queryFn(): Promise<ChannelInfo> {
+        const data = await api.get(Endpoints.channelInfo(uid, ChannelType.person)).json();
+        return ChannelInfoSchema.parse(data);
+      },
+      staleTime: 5 * 60_000,
+    })),
+  });
+  const senderInfoByUid = useMemo(() => {
+    const m = new Map<string, ChannelInfo>();
+    senderUids.forEach((uid, i) => {
+      const info = senderInfoQueries[i]?.data;
+      if (info) m.set(uid, info);
+    });
+    return m;
+  }, [senderUids, senderInfoQueries]);
 
   const meta = useMemo(() => buildMeta(messages), [messages]);
 
-  // 头像走统一 URL builder（对照 octo-web App.avatarChannel）：{apiURL}users/{uid}/avatar?v=1。
-  // 后端 members 接口实测不返 avatar 字段，所以不能依赖 memberMap.avatar；URL 拼接是真正的数据源。
-  // 无头像时后端返占位图或 404，AvatarImage onError 落到首字 fallback。
+  // 头像走 resolvePersonAvatar：channelInfo.logo/avatar → users/{uid}/avatar?v={avatarTag}，
+  // 与 octo-web WKAvatar/WKApp.avatarChannel 的私聊、群聊 tab 逻辑保持一致。
   const baseURL = getApiUrl();
   const spaceId = useSpaceStore(selectCurrentSpaceId);
 
@@ -216,9 +237,17 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
       {messages.map((m) => {
         const k = dedupKey(m);
         const md = meta.get(k);
-        const info = memberMap.get(m.fromUid);
-        const avatarUrl =
-          info?.avatar || channelAvatarUrl(baseURL, m.fromUid, ChannelType.person, spaceId);
+        const memberInfo = memberMap.get(m.fromUid);
+        const channelInfo = senderInfoByUid.get(m.fromUid);
+        const displayName =
+          memberInfo?.name || channelInfo?.remark?.trim() || channelInfo?.name?.trim();
+        const avatarLogo = channelInfo?.logo?.trim() || memberInfo?.avatar?.trim();
+        const avatarUrl = resolvePersonAvatar({
+          baseURL,
+          channelId: m.fromUid,
+          spaceId,
+          ...(avatarLogo && { logo: avatarLogo }),
+        });
         return (
           <Fragment key={k}>
             {md?.dayLabel && (
@@ -232,7 +261,7 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
               message={m}
               groupedWithPrev={md?.grouped ?? false}
               groupedWithNext={md?.groupedWithNext ?? false}
-              {...(info?.name && { displayName: info.name })}
+              {...(displayName && { displayName })}
               {...(avatarUrl && { avatarUrl })}
             />
           </Fragment>

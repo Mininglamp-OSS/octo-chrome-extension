@@ -1,6 +1,9 @@
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getApiUrl } from "@/api/client";
+import { useMyBots } from "@/api/queries/contacts";
+import { useSpaceMembers } from "@/api/queries/spaces";
 import { CmdkAttachmentChips } from "@/cmdk/CmdkAttachmentChips";
 import {
   CmdkChannelPicker,
@@ -19,11 +22,14 @@ import { getSendErrorMessage, withSendAck } from "@/cmdk/sendAck";
 import { resolveApp } from "@/cmdk/urlApps";
 import { useDraggable } from "@/cmdk/useDraggable";
 import { validateAttachments } from "@/components/composer/composerLimits";
+import { ChannelType } from "@/const/channel";
 import { useImConnectionStatus } from "@/im/hooks/useImConnectionStatus";
 import { ConnectStatus } from "@/im/proxy";
 import { sendFile, sendImage, sendText } from "@/im/send";
 import { sendMessage } from "@/platform/messaging";
 import { cmdkLastTargetStorage } from "@/platform/storage";
+import { useSpaceStore } from "@/stores/space";
+import { resolveImageURL, stripSpacePrefix } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 
 const READY_MSG = "CMDK_READY";
@@ -54,6 +60,28 @@ export function CmdkApp() {
   const sentRef = useRef(false);
   const status = useImConnectionStatus();
   const drag = useDraggable();
+  const spaceId = useSpaceStore((s) => s.currentSpaceId);
+  const { data: members } = useSpaceMembers(spaceId);
+  const memberAvatarByUid = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sm of members ?? []) {
+      if (sm.avatar?.trim()) m.set(sm.uid, sm.avatar.trim());
+    }
+    return m;
+  }, [members]);
+
+  // 私聊 picked target 头像可能被旧 storage 毒了（fallback URL 404），用 space member 现刷一遍
+  useEffect(() => {
+    if (!picked || picked.channelType !== ChannelType.person) return;
+    if (memberAvatarByUid.size === 0) return;
+    const uid = stripSpacePrefix(picked.channelId, spaceId);
+    const real = memberAvatarByUid.get(uid);
+    if (!real) return;
+    const resolved = resolveImageURL(getApiUrl(), real);
+    if (resolved && resolved !== picked.avatar) {
+      setPicked({ ...picked, avatar: resolved });
+    }
+  }, [picked, memberAvatarByUid, spaceId]);
 
   const app = resolveApp(ctx.pageUrl, ctx.hostname);
   const longSel = ctx.selectedText.length > LONG_QUOTE_THRESHOLD;

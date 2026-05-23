@@ -32,6 +32,7 @@ import {
   channelAvatarUrl,
   getFirstChar,
   resolveImageURL,
+  resolvePersonAvatar,
 } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
@@ -69,11 +70,18 @@ export function OctoInfoDrawer() {
   const spaceId = useSpaceStore(selectCurrentSpaceId);
   const baseURL = getApiUrl();
   const channelLogo = info?.logo?.trim() || info?.avatar?.trim();
-  const channelAvatarSrc = channelLogo
-    ? resolveImageURL(baseURL, channelLogo)
-    : channelId
-      ? channelAvatarUrl(baseURL, channelId, channelType, spaceId)
-      : "";
+  const channelAvatarSrc = !channelId
+    ? ""
+    : channelType === ChannelType.person
+      ? resolvePersonAvatar({
+          baseURL,
+          channelId,
+          spaceId,
+          ...(channelLogo && { logo: channelLogo }),
+        })
+      : channelLogo
+        ? resolveImageURL(baseURL, channelLogo)
+        : channelAvatarUrl(baseURL, channelId, channelType, spaceId);
 
   async function togglePin(): Promise<void> {
     if (!channelId) return;
@@ -212,10 +220,18 @@ export function OctoInfoDrawer() {
                   成员 {members?.length ?? 0}
                 </p>
                 {aiMembers.length > 0 && (
-                  <MemberGroup title="AI 伙伴" members={aiMembers} />
+                  <MemberGroup
+                    title="AI 伙伴"
+                    members={aiMembers}
+                    spaceId={spaceId}
+                  />
                 )}
                 {humanMembers.length > 0 && (
-                  <MemberGroup title="成员" members={humanMembers} />
+                  <MemberGroup
+                    title="成员"
+                    members={humanMembers}
+                    spaceId={spaceId}
+                  />
                 )}
               </div>
             </>
@@ -274,9 +290,11 @@ function SettingRow({
 function MemberGroup({
   title,
   members,
+  spaceId,
 }: {
   title: string;
   members: Array<{ uid: string; name: string; avatar?: string }>;
+  spaceId: string | null;
 }) {
   const baseURL = getApiUrl();
   return (
@@ -284,11 +302,12 @@ function MemberGroup({
       <p className="mb-1 text-[10px] text-(--color-muted-foreground)">{title}</p>
       <div className="flex flex-wrap gap-2">
         {members.slice(0, 30).map((m) => {
-          const memberAvatar = m.avatar?.trim()
-            ? resolveImageURL(baseURL, m.avatar)
-            : baseURL
-              ? `${baseURL}users/${m.uid}/avatar?v=1`
-              : "";
+          const memberAvatar = resolvePersonAvatar({
+            baseURL,
+            channelId: m.uid,
+            spaceId,
+            ...(m.avatar?.trim() && { logo: m.avatar }),
+          });
           return (
             <div key={m.uid} className="flex w-12 flex-col items-center gap-1">
               <Avatar className="h-9 w-9">
