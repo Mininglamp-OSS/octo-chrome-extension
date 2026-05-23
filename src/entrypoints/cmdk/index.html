@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cmd K</title>
+    <style>
+      /* cmdk 是嵌入到宿主页的全屏透明 iframe —— html/body/root 必须透明，
+         否则 globals.css 给 body 设的 --color-background 会把 iframe 涂满底色，
+         看起来就像一块整屏遮罩。面板自己的卡片内才用 popover bg。
+         overscroll-behavior:none 阻止 iframe 内的滚动溢出到宿主页（scroll chaining） */
+      html, body, #root {
+        background: transparent !important;
+        overscroll-behavior: none;
+      }
+    </style>
   </head>
   <body class="m-0 h-screen">
     <div id="root" class="h-full"></div>

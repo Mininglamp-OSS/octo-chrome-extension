@@ -66,3 +66,15 @@ export const themeStorage = storage.defineItem<ThemeMode>("local:octo:extension:
 export const deviceIdStorage = storage.defineItem<string>("local:octo:extension:device-id", {
   fallback: "",
 });
+
+/** Cmdk 最近选择的目标 —— 让用户连续划词反馈时不必每次重新选 */
+export interface CmdkLastTarget {
+  channelId: string;
+  channelType: number;
+  name: string;
+  avatar?: string;
+}
+export const cmdkLastTargetStorage = storage.defineItem<CmdkLastTarget | null>(
+  "local:octo:extension:cmdk-last-target",
+  { fallback: null },
+);

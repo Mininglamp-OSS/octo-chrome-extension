@@ -12,7 +12,6 @@ const READY_MSG = "CMDK_READY";
 const CONTEXT_MSG = "CMDK_CONTEXT";
 const DONE_MSG = "CMDK_DONE";
 const PLUGIN_CALL_SOURCE = "octo-plugin-call";
-const IFRAME_SIZE = { w: 380, h: 480 };
 
 export function CmdKOverlay() {
   const [selRect, setSelRect] = useState<DOMRect | null>(null);
@@ -76,22 +75,23 @@ export function CmdKOverlay() {
     };
   }, [open]);
 
-  // Cmd+K 快捷键
+  // Cmd+K 快捷键 + Esc 兜底
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        e.stopImmediatePropagation();
         openPanel(selText);
       } else if (e.key === "Escape" && open) {
         e.preventDefault();
         closePanel();
       }
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [openPanel, closePanel, selText, open]);
 
-  // 监听 main world 注入脚本 (window.pluginCall) 触发
+  // main world 注入脚本 (window.pluginCall) 触发
   useEffect(() => {
     function onMsg(e: MessageEvent): void {
       const data = (e.data ?? {}) as { source?: string; cmd?: string; text?: string };
@@ -104,7 +104,7 @@ export function CmdKOverlay() {
     return () => window.removeEventListener("message", onMsg);
   }, [openPanel, selText]);
 
-  // iframe 与 cmdk.html 的双向通信
+  // 与 iframe 内的 CmdkApp 双向通信
   useEffect(() => {
     function onMsg(e: MessageEvent): void {
       const data = (e.data ?? {}) as { type?: string };
@@ -130,32 +130,21 @@ export function CmdKOverlay() {
         <SelectionHint rect={selRect} onClick={() => openPanel(selText)} />
       )}
       {open && (
-        <div
-          className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/30"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closePanel();
+        <iframe
+          ref={iframeRef}
+          title="Octo Cmdk"
+          src={browser.runtime.getURL("/cmdk.html")}
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            height: "100vh",
+            border: 0,
+            background: "transparent",
+            zIndex: 2147483646,
           }}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") closePanel();
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <iframe
-            ref={iframeRef}
-            title="Octo Cmdk"
-            src={browser.runtime.getURL("/cmdk.html")}
-            style={{
-              width: IFRAME_SIZE.w,
-              height: IFRAME_SIZE.h,
-              border: "none",
-              borderRadius: 12,
-              background: "var(--color-background)",
-              boxShadow: "0 12px 40px rgba(0,0,0,0.35)",
-            }}
-            allow="clipboard-read; clipboard-write"
-          />
-        </div>
+          allow="clipboard-read; clipboard-write"
+        />
       )}
     </>
   );

@@ -466,12 +466,12 @@ vite-tsconfig-paths
 | **P7-3a** | Categories 数据 + 弹层（CreateCategoryModal / CategoriesManageModal / MoveToCategoryDialog / useMoveGroupToCategory / useSortCategories / categoriesUi store） | ✅ 文件已创建，未集成 |
 | **P7-3b** | Categories UI 集成：SpaceSwitcher 底部「管理分组…」入口；ConversationList 群项右键「移动到分组…」；按类目分段渲染（私聊段 + 每个 category 段 + 未分组段，可折叠） | ✅ |
 | **P7-4** | Reminders 提醒系统：reminder schema/endpoints；offscreen 注册 `syncRemindersCallback`/`reminderDoneCallback`；attach 监听器在 connect/新消息后自动 `reminderManager.sync()`；ConversationView 加 mentionCount；imSyncReminders/imReminderDone RPC；UI ConversationList/VerticalRail 显示 mentionCount（与 atMeStore 取 max）；进入 channel 自动 `imReminderDone` | ✅ |
+| **P7-5** | Cmdk 高级（对齐 mirror）：单页面板（顶栏来源 App chip + 引用块 + 多附件 chips + Composer + 内嵌 ChannelPicker）；iframe 改全屏透明 overlay；URL→App 解析（20 站点）；超长选段 (>500) 转 `.md` 附件 + `skipQuotedBody`；SEND_ACK_TIMEOUT 12s；`buildCmdkMessageText` 拼引用；拖拽面板；浮标渐变药丸 + 入场动画；`overlaySelectors.isInsidePortal` 防 emoji/mention 弹层误关；持久化 last target；7 子组件 + 5 工具 + 21 新测试 | ✅ |
 
 ### 待做（按优先级）
 
 | 阶段 | 详细 |
 |---|---|
-| **P7-5** | **Cmdk 高级**：多附件拖拽+预览（复用 P7-2 的 validateAttachments）；超长选区（>500 char）自动 `buildSelectionMarkdownFile` 转 .md 附件；SEND_ACK_TIMEOUT=12s 异步反馈 + 失败 toast；`buildCmdkMessageText` 拼接 mention/reply |
 | **P7-6** | **Layout cli/message**：preferences 加 `layout: 'cli' \| 'message'`；`html.dataset.layout` 同步；cli 模式更紧凑（小字号/小间距）；OctoSettingsPopover（sidepanel 顶部下拉同时切 theme+layout，不再跳 options 页） |
 | **P7-7** | **Logout 双击保护**：UserMenu 退出第一次进 armed 态（红色提示），5s 内再点才真退；**撤回占位**：撤回后渲染"xxx 撤回了一条消息"灰条（需要 IM 流监听 revoke 消息并在 useChannelMessages 替换原消息） |
 | **P7-8** | 验收：typecheck/lint/test/build/真机 |
@@ -479,15 +479,15 @@ vite-tsconfig-paths
 ### 当前编译状态
 
 - `pnpm typecheck` ✅ 0 错
-- `pnpm test` ✅ 31 用例全过
-- `pnpm build` ✅ 2.15 MB
-- `pnpm lint` ✅ 0 错（10 warning + 3 info 都是 warn/info 级，正常）
+- `pnpm test` ✅ 84 用例全过（新增 21 个覆盖 urlApps / buildCmdkMessageText / buildSelectionMarkdownFile / overlaySelectors）
+- `pnpm build` ✅ 5.46 MB（含 emoji 资源，JS bundle 持平基线）
+- `pnpm lint` ✅ 0 错（25 warning + 4 info 都是 warn/info 级，正常）
 
 ### 新会话快速对接
 
 1. 读 `PLAN.md` 第 12 节即知整体状态
 2. 当前所在分支：`main`，未提交（pnpm test/build/typecheck/lint 都 OK）
-3. 接下来：从 **P7-5 Cmdk 高级** 开始；继续顺序做 P7-6 → P7-7 → P7-8
+3. 接下来：从 **P7-6 Layout cli/message** 开始；继续顺序做 P7-7 → P7-8
 4. 重要约定：
    - 不抄 mirror 源码，对照行为重写
    - 完全独立，零 web 仓库依赖

@@ -14,14 +14,18 @@ export function setupHandlers(): void {
     await openSidePanel(data?.windowId);
   });
 
-  // 请求跳转某个会话 —— 先记到 pending，sidepanel 起来后读
-  onMessage("requestOpenConversation", async ({ data }) => {
-    await pendingConversationStorage.setValue(data);
-    await openSidePanel();
-    // 给 sidepanel 一点时间挂载再广播
-    setTimeout(() => {
-      void sendMessage("openConversation", data).catch(() => {});
-    }, 200);
+  // 请求跳转某个会话 —— 优先用 sender.tab.windowId 同步开 sidePanel（保住 user gesture），
+  // 然后异步写 pending + 广播 openConversation（双通道兜底，sidepanel 任选其一消费）。
+  // 必须 sync 触发 sp.open()，绝对不能在它前面有任何 await，否则用户手势上下文丢失。
+  onMessage("requestOpenConversation", ({ data, sender }) => {
+    const windowId = (sender as { tab?: { windowId?: number } } | undefined)?.tab?.windowId;
+    void openSidePanel(windowId).catch(() => {});
+
+    void pendingConversationStorage.setValue(data).then(() => {
+      setTimeout(() => {
+        void sendMessage("openConversation", data).catch(() => {});
+      }, 200);
+    });
   });
 
   // sidepanel 主动请求当前 auth（开机自检）

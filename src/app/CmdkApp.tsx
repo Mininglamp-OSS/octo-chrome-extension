@@ -1,195 +1,259 @@
-import { Search, Send, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/api/client";
-import { Endpoints } from "@/api/endpoints";
-import { ConversationSyncResponseSchema } from "@/api/schemas/conversation";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import type { ConversationView } from "@/im/conversation";
-import { toConversationView } from "@/im/conversation";
+import { CmdkAttachmentChips } from "@/cmdk/CmdkAttachmentChips";
+import {
+  CmdkChannelPicker,
+  type PickedTarget,
+} from "@/cmdk/CmdkChannelPicker";
+import {
+  type CmdkComposerHandle,
+  CmdkComposerSlot,
+} from "@/cmdk/CmdkComposerSlot";
+import { CmdkQuoteBlock } from "@/cmdk/CmdkQuoteBlock";
+import { CmdkTopBar } from "@/cmdk/CmdkTopBar";
+import { buildCmdkMessageText, type PanelContext } from "@/cmdk/buildCmdkMessageText";
+import { buildSelectionMarkdownFile } from "@/cmdk/buildSelectionMarkdownFile";
+import { isInsidePortal } from "@/cmdk/overlaySelectors";
+import { getSendErrorMessage, withSendAck } from "@/cmdk/sendAck";
+import { resolveApp } from "@/cmdk/urlApps";
+import { useDraggable } from "@/cmdk/useDraggable";
+import { validateAttachments } from "@/components/composer/composerLimits";
 import { useImConnectionStatus } from "@/im/hooks/useImConnectionStatus";
 import { ConnectStatus } from "@/im/proxy";
-import { sendText } from "@/im/send";
-import { avatarGradient, getFirstChar } from "@/utils/avatar";
+import { sendFile, sendImage, sendText } from "@/im/send";
+import { sendMessage } from "@/platform/messaging";
+import { cmdkLastTargetStorage } from "@/platform/storage";
 import { cn } from "@/utils/cn";
-import { extractErrorMsg } from "@/utils/extractErrorMsg";
-
-interface PanelContext {
-  selectedText: string;
-  pageUrl: string;
-  pageTitle: string;
-  hostname: string;
-}
 
 const READY_MSG = "CMDK_READY";
 const CONTEXT_MSG = "CMDK_CONTEXT";
 const DONE_MSG = "CMDK_DONE";
+const LONG_QUOTE_THRESHOLD = 500;
+
+const EMPTY_CTX: PanelContext = {
+  selectedText: "",
+  pageUrl: "",
+  pageTitle: "",
+  hostname: "",
+};
+
+const PANEL_SHADOW_REST =
+  "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12)";
+const PANEL_SHADOW_DRAG =
+  "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12), 0 0 0 1px rgba(124, 92, 252, 0.28), 0 0 0 5px rgba(124, 92, 252, 0.08)";
 
 export function CmdkApp() {
-  const [conversations, setConversations] = useState<ConversationView[]>([]);
-  const [keyword, setKeyword] = useState("");
-  const [picked, setPicked] = useState<ConversationView | null>(null);
-  const [text, setText] = useState("");
+  const [ctx, setCtx] = useState<PanelContext>(EMPTY_CTX);
+  const [picked, setPicked] = useState<PickedTarget | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [attachments, setAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
-  const status = useImConnectionStatus();
+  const composerRef = useRef<CmdkComposerHandle | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sentRef = useRef(false);
+  const status = useImConnectionStatus();
+  const drag = useDraggable();
 
-  // 拉会话 —— cmdk overlay 是独立 webview，自己直接 HTTP；X-Space-Id 由 ky 自动注入
-  useEffect(() => {
-    let cancelled = false;
-    void api
-      .post(Endpoints.conversations, { json: { msg_count: 1 } })
-      .json()
-      .then((data) => {
-        if (cancelled) return;
-        const parsed = ConversationSyncResponseSchema.parse(data);
-        setConversations((parsed.conversations ?? []).map(toConversationView));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const app = resolveApp(ctx.pageUrl, ctx.hostname);
+  const longSel = ctx.selectedText.length > LONG_QUOTE_THRESHOLD;
 
-  // 接收来自 parent (cmdk-overlay) 的初始 context
+  // 1) 接收 parent 的初始 context；2) 通知 parent 就绪
   useEffect(() => {
     function onMessage(e: MessageEvent): void {
       const data = (e.data ?? {}) as { type?: string; payload?: PanelContext };
       if (data.type === CONTEXT_MSG && data.payload) {
-        setText(data.payload.selectedText ?? "");
+        setCtx({ ...EMPTY_CTX, ...data.payload });
       }
     }
     window.addEventListener("message", onMessage);
-    // 通知 parent 我已就绪
     window.parent?.postMessage({ type: READY_MSG }, "*");
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const filtered = useMemo(() => {
-    const k = keyword.trim().toLowerCase();
-    if (!k) return conversations.slice(0, 50);
-    return conversations.filter((c) => c.name.toLowerCase().includes(k)).slice(0, 50);
-  }, [conversations, keyword]);
+  useEffect(() => {
+    void cmdkLastTargetStorage.getValue().then((t) => {
+      if (t) setPicked(t);
+    });
+  }, []);
 
   function close(): void {
-    if (!sentRef.current) {
-      window.parent?.postMessage({ type: DONE_MSG }, "*");
-      sentRef.current = true;
-    }
+    if (sentRef.current) return;
+    sentRef.current = true;
+    window.parent?.postMessage({ type: DONE_MSG }, "*");
   }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape" && !pickerOpen) {
+        e.preventDefault();
+        close();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  });
+  }, [pickerOpen]);
 
-  async function send(): Promise<void> {
-    if (!picked || !text.trim() || sending) return;
+  function handleMaskMouseDown(e: React.MouseEvent<HTMLDivElement>): void {
+    if (e.target !== e.currentTarget) return;
+    if (isInsidePortal(e.target)) return;
+    close();
+  }
+
+  function addFiles(incoming: File[]): void {
+    const { accepted, rejected } = validateAttachments(attachments, incoming);
+    if (rejected.length > 0) {
+      const reasons = new Set(rejected.map((r) => r.reason));
+      for (const r of reasons) toast.error(r);
+    }
+    if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
+  }
+
+  function removeAttachment(idx: number): void {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function openFilePicker(): void {
+    fileInputRef.current?.click();
+  }
+
+  async function handleSend(text: string): Promise<void> {
+    if (sending || !picked) return;
+    const trimmed = text.trim();
+    if (!trimmed && attachments.length === 0 && !longSel) return;
+
+    // 必须在所有 await 之前同步发出，保持用户手势上下文，
+    // 否则 background 拿不到 user activation，chrome.sidePanel.open() 会失败。
+    void sendMessage("requestOpenConversation", {
+      channelId: picked.channelId,
+      channelType: picked.channelType,
+    }).catch(() => {});
+
+    if (status !== ConnectStatus.Connected && status !== undefined) {
+      toast.message("正在重连 IM，仍尝试发送…");
+    }
+
     setSending(true);
     try {
-      await sendText(picked.channelId, picked.channelType, text.trim());
+      const filesToSend = [...attachments];
+      if (longSel) {
+        filesToSend.push(buildSelectionMarkdownFile(ctx));
+      }
+
+      const tasks: Promise<unknown>[] = filesToSend.map((f) => {
+        const send = f.type.startsWith("image/")
+          ? sendImage(picked.channelId, picked.channelType, f)
+          : sendFile(picked.channelId, picked.channelType, f);
+        return withSendAck(send);
+      });
+
+      const built = buildCmdkMessageText(trimmed, ctx, { skipQuotedBody: longSel });
+      if (built.content) {
+        tasks.push(
+          withSendAck(sendText(picked.channelId, picked.channelType, built.content)),
+        );
+      }
+
+      await Promise.all(tasks);
+
+      void cmdkLastTargetStorage.setValue(picked);
       toast.success(`已发送到 ${picked.name}`);
-      setTimeout(close, 200);
+      window.setTimeout(close, 200);
     } catch (err) {
-      toast.error(extractErrorMsg(err) || "发送失败");
-    } finally {
+      toast.error(getSendErrorMessage(err));
       setSending(false);
     }
   }
 
-  return (
-    <div className="flex h-full flex-col bg-(--color-background)">
-      <header className="flex h-10 shrink-0 items-center justify-between border-b px-3">
-        <span className="text-sm font-medium">发送到 Octo</span>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={close}>
-          <X className="h-4 w-4" />
-        </Button>
-      </header>
+  function handleDragOver(e: React.DragEvent): void {
+    e.preventDefault();
+  }
+  function handleDrop(e: React.DragEvent): void {
+    e.preventDefault();
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length > 0) addFiles(files);
+  }
 
-      {!picked ? (
-        <>
-          <div className="border-b px-3 py-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-(--color-muted-foreground)" />
-              <Input
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                placeholder="搜索会话…"
-                className="pl-7"
-                autoFocus
-              />
-            </div>
+  return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: 全屏区域，关闭语义已由 Esc 兜底
+    <div
+      className="animate-in fade-in fixed inset-0 z-50 flex items-start justify-center bg-transparent pt-[11vh] duration-150"
+      onMouseDown={handleMaskMouseDown}
+    >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: 面板容器仅作拖拽 + 投放容器 */}
+      <div
+        className={cn(
+          "animate-in slide-in-from-top-4 zoom-in-95 relative flex max-h-[82vh] w-[580px] max-w-[92vw] flex-col overflow-hidden rounded-[22px] border border-(--color-border) bg-(--color-popover) text-(--color-popover-foreground) ring-1 ring-white/10 duration-200 dark:ring-white/[0.04]",
+        )}
+        style={{
+          transform: `translate3d(${drag.translate.x}px, ${drag.translate.y}px, 0)`,
+          boxShadow: drag.dragging ? PANEL_SHADOW_DRAG : PANEL_SHADOW_REST,
+          animationTimingFunction: "cubic-bezier(0.2, 0.9, 0.2, 1)",
+          animationDuration: "220ms",
+        }}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <CmdkTopBar
+          target={picked}
+          onPickTarget={() => setPickerOpen((v) => !v)}
+          onClose={close}
+          dragHandlers={drag.handlers}
+          dragging={drag.dragging}
+        />
+
+        {(ctx.pageUrl || ctx.selectedText) && (
+          <CmdkQuoteBlock ctx={ctx} app={app} compact={pickerOpen} />
+        )}
+
+        <CmdkAttachmentChips items={attachments} onRemove={removeAttachment} />
+
+        <div className="shrink-0">
+          <CmdkComposerSlot
+            ref={composerRef}
+            sending={sending}
+            hasTarget={!!picked}
+            hasAttachments={attachments.length > 0}
+            onSubmit={(t) => void handleSend(t)}
+            onPickFiles={openFilePicker}
+            onPaste={addFiles}
+          />
+        </div>
+
+        {pickerOpen && (
+          <CmdkChannelPicker
+            current={picked}
+            onPick={(t) => {
+              setPicked(t);
+              setPickerOpen(false);
+              composerRef.current?.focus();
+            }}
+            onCancel={() => setPickerOpen(false)}
+          />
+        )}
+
+        {sending && (
+          <div className="animate-in fade-in absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-(--color-popover)/85 backdrop-blur-[2px] duration-150">
+            <Loader2 className="h-7 w-7 animate-spin text-(--color-primary)" />
+            <span className="text-[13px] text-(--color-muted-foreground)">
+              {longSel ? "正在转换为 .md 并发送…" : "发送中…"}
+            </span>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {filtered.length === 0 && (
-              <div className="p-4 text-center text-xs text-(--color-muted-foreground)">
-                {status === ConnectStatus.Connected ? "无匹配会话" : "未连接"}
-              </div>
-            )}
-            {filtered.map((c) => (
-              <button
-                key={c.channelId}
-                type="button"
-                onClick={() => setPicked(c)}
-                className="flex w-full items-center gap-2 border-b px-3 py-2 text-left hover:bg-(--color-accent)/40"
-              >
-                <Avatar className="h-7 w-7 shrink-0">
-                  {c.avatar && <AvatarImage src={c.avatar} alt={c.name} />}
-                  <AvatarFallback
-                    className="text-[10px] text-white"
-                    style={{ background: avatarGradient(c.name) }}
-                  >
-                    {getFirstChar(c.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="truncate text-sm">{c.name}</span>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setPicked(null)}
-              className="text-xs text-(--color-muted-foreground) hover:underline"
-            >
-              ← 重选
-            </button>
-            <span className={cn("ml-auto truncate text-xs font-medium")}>{picked.name}</span>
-          </div>
-          <div className="min-h-0 flex-1 p-3">
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="想说点什么…"
-              className="h-full w-full resize-none rounded-md border bg-transparent p-2 text-sm focus:outline-none focus:ring-2 focus:ring-(--color-ring)"
-              ref={(el) => {
-                el?.focus();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void send();
-                }
-              }}
-            />
-          </div>
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t px-3 py-2">
-            <span className="text-[10px] text-(--color-muted-foreground)">⌘+Enter 发送</span>
-            <Button size="sm" onClick={() => void send()} disabled={sending || !text.trim()}>
-              <Send className="mr-1 h-3 w-3" />
-              发送
-            </Button>
-          </div>
-        </>
-      )}
+        )}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length > 0) addFiles(files);
+            e.target.value = "";
+          }}
+        />
+      </div>
     </div>
   );
 }
