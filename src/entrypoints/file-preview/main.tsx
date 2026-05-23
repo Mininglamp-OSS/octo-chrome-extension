@@ -34,10 +34,16 @@ function PreviewBoot({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-const root = document.getElementById("root");
-if (!root) throw new Error("missing #root");
+const container = document.getElementById("root");
+if (!container) throw new Error("missing #root");
 
-createRoot(root).render(
+// Guard：dev 模式下 wxt HMR 可能让本模块重跑，导致 createRoot 在同一 container 上调用两次
+// → 两份 React tree 同时挂载、UI 渲染两份。把 root 挂在 container 上做幂等。
+const cache = container as HTMLElement & { __reactRoot?: ReturnType<typeof createRoot> };
+const reactRoot = cache.__reactRoot ?? createRoot(container);
+cache.__reactRoot = reactRoot;
+
+reactRoot.render(
   <StrictMode>
     <PreviewBoot>
       <FilePreviewApp />
