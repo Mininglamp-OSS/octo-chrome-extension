@@ -1,32 +1,17 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { getApiUrl } from "@/api/client";
-import { useMyBots } from "@/api/queries/contacts";
 import { useSpaceMembers } from "@/api/queries/spaces";
-import { CmdkAttachmentChips } from "@/cmdk/CmdkAttachmentChips";
 import {
   CmdkChannelPicker,
   type PickedTarget,
 } from "@/cmdk/CmdkChannelPicker";
-import {
-  type CmdkComposerHandle,
-  CmdkComposerSlot,
-} from "@/cmdk/CmdkComposerSlot";
-import { CmdkQuoteBlock } from "@/cmdk/CmdkQuoteBlock";
+import { CmdkComposer, type CmdkComposerHandle } from "@/cmdk/CmdkComposer";
 import { CmdkTopBar } from "@/cmdk/CmdkTopBar";
-import { buildCmdkMessageText, type PanelContext } from "@/cmdk/buildCmdkMessageText";
-import { buildSelectionMarkdownFile } from "@/cmdk/buildSelectionMarkdownFile";
+import type { PanelContext } from "@/cmdk/buildCmdkMessageText";
 import { isInsidePortal } from "@/cmdk/overlaySelectors";
-import { getSendErrorMessage, withSendAck } from "@/cmdk/sendAck";
-import { resolveApp } from "@/cmdk/urlApps";
 import { useDraggable } from "@/cmdk/useDraggable";
-import { validateAttachments } from "@/components/composer/composerLimits";
 import { ChannelType } from "@/const/channel";
-import { useImConnectionStatus } from "@/im/hooks/useImConnectionStatus";
-import { ConnectStatus } from "@/im/proxy";
-import { sendFile, sendImage, sendText } from "@/im/send";
-import { sendMessage } from "@/platform/messaging";
 import { cmdkLastTargetStorage } from "@/platform/storage";
 import { useSpaceStore } from "@/stores/space";
 import { resolveImageURL, stripSpacePrefix } from "@/utils/avatar";
@@ -53,12 +38,9 @@ export function CmdkApp() {
   const [ctx, setCtx] = useState<PanelContext>(EMPTY_CTX);
   const [picked, setPicked] = useState<PickedTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [attachments, setAttachments] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const composerRef = useRef<CmdkComposerHandle | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const sentRef = useRef(false);
-  const status = useImConnectionStatus();
   const drag = useDraggable();
   const spaceId = useSpaceStore((s) => s.currentSpaceId);
   const { data: members } = useSpaceMembers(spaceId);
@@ -83,7 +65,6 @@ export function CmdkApp() {
     }
   }, [picked, memberAvatarByUid, spaceId]);
 
-  const app = resolveApp(ctx.pageUrl, ctx.hostname);
   const longSel = ctx.selectedText.length > LONG_QUOTE_THRESHOLD;
 
   // 1) 接收 parent 的初始 context；2) 通知 parent 就绪
@@ -128,78 +109,13 @@ export function CmdkApp() {
     close();
   }
 
-  function addFiles(incoming: File[]): void {
-    const { accepted, rejected } = validateAttachments(attachments, incoming);
-    if (rejected.length > 0) {
-      const reasons = new Set(rejected.map((r) => r.reason));
-      for (const r of reasons) toast.error(r);
-    }
-    if (accepted.length > 0) setAttachments((prev) => [...prev, ...accepted]);
-  }
-
-  function removeAttachment(idx: number): void {
-    setAttachments((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function openFilePicker(): void {
-    fileInputRef.current?.click();
-  }
-
-  async function handleSend(text: string): Promise<void> {
-    if (sending || !picked) return;
-    const trimmed = text.trim();
-    if (!trimmed && attachments.length === 0 && !longSel) return;
-
-    // 必须在所有 await 之前同步发出，保持用户手势上下文，
-    // 否则 background 拿不到 user activation，chrome.sidePanel.open() 会失败。
-    void sendMessage("requestOpenConversation", {
-      channelId: picked.channelId,
-      channelType: picked.channelType,
-    }).catch(() => {});
-
-    if (status !== ConnectStatus.Connected && status !== undefined) {
-      toast.message("正在重连 IM，仍尝试发送…");
-    }
-
-    setSending(true);
-    try {
-      const filesToSend = [...attachments];
-      if (longSel) {
-        filesToSend.push(buildSelectionMarkdownFile(ctx));
-      }
-
-      const tasks: Promise<unknown>[] = filesToSend.map((f) => {
-        const send = f.type.startsWith("image/")
-          ? sendImage(picked.channelId, picked.channelType, f)
-          : sendFile(picked.channelId, picked.channelType, f);
-        return withSendAck(send);
-      });
-
-      const built = buildCmdkMessageText(trimmed, ctx, { skipQuotedBody: longSel });
-      if (built.content) {
-        tasks.push(
-          withSendAck(sendText(picked.channelId, picked.channelType, built.content)),
-        );
-      }
-
-      await Promise.all(tasks);
-
-      void cmdkLastTargetStorage.setValue(picked);
-      toast.success(`已发送到 ${picked.name}`);
-      window.setTimeout(close, 200);
-    } catch (err) {
-      toast.error(getSendErrorMessage(err));
-      setSending(false);
-    }
-  }
-
   function handleDragOver(e: React.DragEvent): void {
     e.preventDefault();
   }
   function handleDrop(e: React.DragEvent): void {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files ?? []);
-    if (files.length > 0) addFiles(files);
+    if (files.length > 0) composerRef.current?.addFiles(files);
   }
 
   return (
@@ -231,21 +147,14 @@ export function CmdkApp() {
           dragging={drag.dragging}
         />
 
-        {(ctx.pageUrl || ctx.selectedText) && (
-          <CmdkQuoteBlock ctx={ctx} app={app} compact={pickerOpen} />
-        )}
-
-        <CmdkAttachmentChips items={attachments} onRemove={removeAttachment} />
-
         <div className="shrink-0">
-          <CmdkComposerSlot
+          <CmdkComposer
             ref={composerRef}
-            sending={sending}
-            hasTarget={!!picked}
-            hasAttachments={attachments.length > 0}
-            onSubmit={(t) => void handleSend(t)}
-            onPickFiles={openFilePicker}
-            onPaste={addFiles}
+            picked={picked}
+            ctx={ctx}
+            longSel={longSel}
+            onSent={close}
+            onSendingChange={setSending}
           />
         </div>
 
@@ -255,7 +164,6 @@ export function CmdkApp() {
             onPick={(t) => {
               setPicked(t);
               setPickerOpen(false);
-              composerRef.current?.focus();
             }}
             onCancel={() => setPickerOpen(false)}
           />
@@ -269,18 +177,6 @@ export function CmdkApp() {
             </span>
           </div>
         )}
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            if (files.length > 0) addFiles(files);
-            e.target.value = "";
-          }}
-        />
       </div>
     </div>
   );

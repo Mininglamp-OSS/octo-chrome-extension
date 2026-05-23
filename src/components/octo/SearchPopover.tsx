@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api } from "@/api/client";
+import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { useFriends } from "@/api/queries/contacts";
 import { type SearchResult, SearchResultSchema } from "@/api/schemas/search";
@@ -13,7 +13,12 @@ import { ChannelType } from "@/const/channel";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useSpaceStore } from "@/stores/space";
 import { useUIStore } from "@/stores/ui";
-import { avatarGradient, getFirstChar } from "@/utils/avatar";
+import {
+  avatarGradient,
+  channelAvatarUrl,
+  getFirstChar,
+  resolvePersonAvatar,
+} from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 
 type Tab = "contacts" | "groups" | "files";
@@ -237,13 +242,20 @@ function ResultList({
   onSelectChannel: (channelId: string, channelType: number) => void;
   onOpenFile: (f: SearchResult["files"][number]) => void;
 }) {
+  const baseURL = getApiUrl();
+  const spaceId = useSpaceStore((s) => s.currentSpaceId);
   const items =
     tab === "contacts"
       ? friends.map((c) => ({
           key: c.uid,
           name: c.name || c.uid,
           sub: "",
-          avatar: c.avatar,
+          avatar: resolvePersonAvatar({
+            baseURL,
+            channelId: c.uid,
+            spaceId,
+            ...(c.avatar?.trim() && { logo: c.avatar.trim() }),
+          }),
           onClick: () => onSelectChannel(c.uid, ChannelType.person),
         }))
       : tab === "groups"
@@ -251,7 +263,8 @@ function ResultList({
             key: g.channel_id,
             name: g.name || g.channel_id,
             sub: g.member_count ? `${g.member_count} 人` : "",
-            avatar: g.avatar,
+            // group / topic 头像直接走 channelAvatarUrl（与 Rail/ConversationList 一致）
+            avatar: channelAvatarUrl(baseURL, g.channel_id, g.channel_type),
             onClick: () => onSelectChannel(g.channel_id, g.channel_type),
           }))
         : files.map((f) => ({

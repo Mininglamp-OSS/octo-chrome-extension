@@ -10,6 +10,7 @@ import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useSpaceStore } from "@/stores/space";
+import { hydrateAvatarTags, subscribeAvatarTags } from "@/utils/avatar";
 
 // 模块加载即注册（每个 UI bundle 仅一次）
 registerAllRenders();
@@ -40,7 +41,13 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([hydrateAuth(), hydrateSpace(), hydratePrefs(), hydrateChannel()])
+    Promise.all([
+      hydrateAuth(),
+      hydrateSpace(),
+      hydratePrefs(),
+      hydrateChannel(),
+      hydrateAvatarTags(),
+    ])
       .catch(() => {
         // hydrate 内部各自有 fallback
       })
@@ -50,11 +57,13 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
     const off1 = subAuth();
     const off2 = subSpace();
     const off3 = subPrefs();
+    const off4 = subscribeAvatarTags();
     return () => {
       cancelled = true;
       off1();
       off2();
       off3();
+      off4();
     };
   }, [hydrateAuth, hydrateSpace, hydratePrefs, hydrateChannel, subAuth, subSpace, subPrefs]);
 

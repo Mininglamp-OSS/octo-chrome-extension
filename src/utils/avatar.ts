@@ -1,3 +1,4 @@
+import { storage } from "wxt/utils/storage";
 import { ChannelType } from "@/const/channel";
 
 export function getFirstChar(name: string): string {
@@ -112,13 +113,93 @@ export function stripSpacePrefix(channelId: string, spaceId?: string | null): st
 
 const avatarTags = new Map<string, string>();
 
+/**
+ * Tags 持久化到 wxt storage，跨刷新保留。
+ * - 浏览器 HTTP cache key = URL（含 ?v=tag），tag 稳定 → 刷新后整盘头像直接 from disk cache
+ * - 跨 entrypoint：sidepanel / cmdk 各自 hydrate 同一份 storage，tag 一致 → 浏览器 cache 共享
+ *
+ * 写入用 dirty + 500ms debounce flush，避免短时间内高频拼 URL 触发同步 IO。
+ */
+const TAGS_STORAGE_KEY = "local:octo:avatar-tags" as const;
+let _tagsItem: ReturnType<
+  typeof storage.defineItem<Record<string, string>>
+> | null = null;
+let tagsDirty = false;
+let tagsFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** test / SSR 环境 chrome.runtime 缺席时禁用 storage，避免 unhandled rejection。 */
+function isStorageAvailable(): boolean {
+  return typeof chrome !== "undefined" && typeof chrome.runtime?.id === "string";
+}
+
+/** 延迟创建 storage item：模块顶层创建会触发异步 getItem，在 node test 环境下抛错。 */
+function tagsItem() {
+  if (!_tagsItem) {
+    _tagsItem = storage.defineItem<Record<string, string>>(TAGS_STORAGE_KEY, { fallback: {} });
+  }
+  return _tagsItem;
+}
+
+function scheduleTagsFlush(): void {
+  if (tagsFlushTimer != null) return;
+  if (!isStorageAvailable()) return;
+  tagsFlushTimer = setTimeout(() => {
+    tagsFlushTimer = null;
+    if (!tagsDirty) return;
+    tagsDirty = false;
+    const obj: Record<string, string> = {};
+    for (const [k, v] of avatarTags) obj[k] = v;
+    void tagsItem().setValue(obj).catch(() => {});
+  }, 500);
+}
+
+/** AppBoot 启动时调用一次，把持久化的 tags 灌进内存 Map。 */
+export async function hydrateAvatarTags(): Promise<void> {
+  if (!isStorageAvailable()) return;
+  try {
+    const obj = await tagsItem().getValue();
+    if (!obj) return;
+    for (const [k, v] of Object.entries(obj)) {
+      // 不覆盖运行中已生成的（避免新写入被旧值挤掉）
+      if (!avatarTags.has(k)) avatarTags.set(k, v);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/** 订阅其他 entrypoint 改 tag 的通知，本地 Map 实时同步。 */
+export function subscribeAvatarTags(): () => void {
+  if (!isStorageAvailable()) return () => {};
+  try {
+    return tagsItem().watch((next) => {
+      if (!next) return;
+      // 直接 replace：以最新 storage 为准（已包含本端写入，因为本端写后 storage 会广播回来）
+      avatarTags.clear();
+      for (const [k, v] of Object.entries(next)) avatarTags.set(k, v);
+    });
+  } catch {
+    return () => {};
+  }
+}
+
 function getDefaultAvatarTag(channelId: string, channelType: number): string {
   const key = `${channelType}:${channelId}`;
   const existing = avatarTags.get(key);
   if (existing) return existing;
   const tag = Date.now().toString();
   avatarTags.set(key, tag);
+  tagsDirty = true;
+  scheduleTagsFlush();
   return tag;
+}
+
+/** 主动 invalidate 一个头像 tag（用户改了头像、上传新 logo 时调）。 */
+export function bumpAvatarTag(channelId: string, channelType: number): void {
+  const key = `${channelType}:${channelId}`;
+  avatarTags.set(key, Date.now().toString());
+  tagsDirty = true;
+  scheduleTagsFlush();
 }
 
 /**

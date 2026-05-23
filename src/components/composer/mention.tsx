@@ -158,14 +158,18 @@ function memberAvatarUrl(uid: string, avatar?: string): string {
   return `${base}users/${uid}/avatar?v=1`;
 }
 
-function toRows(members: Member[], query: string): MentionRow[] {
-  const rows: MentionRow[] = members.map((m) => ({
-    uid: m.uid,
-    name: m.name,
-    avatar: memberAvatarUrl(m.uid, m.avatar),
-    isBot: isMemberBot(m),
-    isAll: false,
-  }));
+function toRows(members: Member[], query: string, getBotAvatar?: (uid: string) => string | undefined): MentionRow[] {
+  const rows: MentionRow[] = members.map((m) => {
+    const isBot = isMemberBot(m);
+    const botAvatar = isBot ? getBotAvatar?.(m.uid) : undefined;
+    return {
+      uid: m.uid,
+      name: m.name,
+      avatar: botAvatar || memberAvatarUrl(m.uid, m.avatar),
+      isBot,
+      isAll: false,
+    };
+  });
   // 「所有人」首行（查询匹配「所」「所有人」「all」「everyone」时保留）
   const q = query.toLowerCase();
   const allMatches =
@@ -186,6 +190,7 @@ export function createMentionExtension(
   getChannelType: () => number,
   getMembers: () => Member[],
   onActiveChange?: (active: boolean) => void,
+  getBotAvatar?: (uid: string) => string | undefined,
 ) {
   return Mention.configure({
     HTMLAttributes: { class: "octo-mention" },
@@ -209,7 +214,7 @@ export function createMentionExtension(
             query: string;
           }) {
             onActiveChange?.(true);
-            const rows = toRows(props.items ?? [], props.query ?? "");
+            const rows = toRows(props.items ?? [], props.query ?? "", getBotAvatar);
             component = new ReactRenderer(MentionList, {
               props: { items: rows, command: props.command },
               editor: props.editor,
@@ -231,7 +236,7 @@ export function createMentionExtension(
             command: (a: { id: string; label: string }) => void;
             query: string;
           }) {
-            const rows = toRows(props.items ?? [], props.query ?? "");
+            const rows = toRows(props.items ?? [], props.query ?? "", getBotAvatar);
             component?.updateProps({ items: rows, command: props.command });
             if (props.clientRect && popup?.[0]) {
               popup[0].setProps({ getReferenceClientRect: props.clientRect as () => DOMRect });

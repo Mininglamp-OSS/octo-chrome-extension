@@ -32,7 +32,7 @@ export function CmdkQuoteBlock({ ctx, app, compact = false }: CmdkQuoteBlockProp
   }, [compact]);
 
   return (
-    <div className="relative mx-[18px] mt-4 shrink-0 overflow-hidden rounded-2xl bg-(--color-muted)/40 pl-5 pr-4 pt-3 pb-3 dark:bg-(--color-background)/70">
+    <div className="relative shrink-0 overflow-hidden rounded-2xl bg-(--color-muted)/40 pl-5 pr-4 pt-3 pb-3 dark:bg-(--color-background)/70">
       {/* 3px 紫色左 ribbon */}
       <span
         aria-hidden

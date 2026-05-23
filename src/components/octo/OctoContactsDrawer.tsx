@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { getApiUrl } from "@/api/client";
 import { useMyBots } from "@/api/queries/contacts";
 import { useSpaceMembers } from "@/api/queries/spaces";
 import type { SpaceMember } from "@/api/schemas/space";
 import { ChannelType } from "@/const/channel";
+import { useBotAvatarMap } from "@/hooks/useBotAvatarMap";
 import { useAuthStore } from "@/stores/auth";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useDrawerStore } from "@/stores/drawer";
 import { useSpaceStore } from "@/stores/space";
-import { avatarGradient, getFirstChar } from "@/utils/avatar";
+import { avatarGradient, channelAvatarUrl, getFirstChar } from "@/utils/avatar";
 
 /**
  * 通讯录抽屉。布局/类名对照 mirror 插件端 OctoContactsDrawer：
@@ -59,6 +61,10 @@ export function OctoContactsDrawer() {
     const list = membersQ.data ?? [];
     return list.filter((m) => m.uid !== myUid && m.robot !== 1);
   }, [membersQ.data, myUid]);
+
+  // 真头像：朋友 = users/{uid}/avatar；AI 伙伴 = person channelInfo.logo
+  const botAvatarMap = useBotAvatarMap(aiPartners);
+  const baseURL = getApiUrl();
 
   const kw = keyword.trim().toLowerCase();
   const filteredAi = useMemo(
@@ -142,7 +148,13 @@ export function OctoContactsDrawer() {
             <>
               <div className="cd-section">AI 伙伴 · {filteredAi.length}</div>
               {filteredAi.map((m) => (
-                <Row key={m.uid} member={m} ai onClick={() => onPick(m.uid)} />
+                <Row
+                  key={m.uid}
+                  member={m}
+                  ai
+                  avatarUrl={botAvatarMap.get(m.uid)}
+                  onClick={() => onPick(m.uid)}
+                />
               ))}
             </>
           )}
@@ -151,7 +163,12 @@ export function OctoContactsDrawer() {
             <>
               <div className="cd-section">我的朋友 · {filteredFriends.length}</div>
               {filteredFriends.map((m) => (
-                <Row key={m.uid} member={m} onClick={() => onPick(m.uid)} />
+                <Row
+                  key={m.uid}
+                  member={m}
+                  avatarUrl={channelAvatarUrl(baseURL, m.uid, ChannelType.person)}
+                  onClick={() => onPick(m.uid)}
+                />
               ))}
             </>
           )}
@@ -170,15 +187,37 @@ export function OctoContactsDrawer() {
   );
 }
 
-function Row({ member, ai, onClick }: { member: SpaceMember; ai?: boolean; onClick: () => void }) {
+function Row({
+  member,
+  ai,
+  avatarUrl,
+  onClick,
+}: {
+  member: SpaceMember;
+  ai?: boolean;
+  avatarUrl?: string;
+  onClick: () => void;
+}) {
   const initials = getFirstChar(member.name);
+  const [imgFailed, setImgFailed] = useState(false);
+  const showImg = Boolean(avatarUrl) && !imgFailed;
   return (
     <button type="button" className="cd-row" onClick={onClick}>
       <div
         className={ai ? "cd-av ai" : "cd-av"}
-        style={ai ? undefined : { background: avatarGradient(member.name) }}
+        style={ai || showImg ? undefined : { background: avatarGradient(member.name) }}
       >
-        {initials}
+        {showImg ? (
+          <img
+            src={avatarUrl}
+            alt={member.name}
+            className="h-full w-full rounded-[inherit] object-cover"
+            draggable={false}
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          initials
+        )}
       </div>
       <div className="cd-txt">
         <span className="cd-nm">

@@ -1,6 +1,7 @@
 import { LogOut, Monitor, Moon, MoreVertical, Settings, Sun } from "lucide-react";
+import { getApiUrl } from "@/api/client";
 import { useLogout } from "@/api/queries/auth";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,21 +13,27 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ChannelType } from "@/const/channel";
 import { selectName, useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
-import { getFirstChar } from "@/utils/avatar";
+import { useSpaceStore } from "@/stores/space";
+import { channelAvatarUrl, getFirstChar } from "@/utils/avatar";
 
 export function UserMenu() {
   const name = useAuthStore(selectName);
+  const myUid = useAuthStore((s) => s.state?.uid ?? "");
+  const spaceId = useSpaceStore((s) => s.currentSpaceId);
   const theme = usePreferencesStore((s) => s.theme);
   const setTheme = usePreferencesStore((s) => s.setTheme);
   const logout = useLogout();
+  const avatarUrl = myUid ? channelAvatarUrl(getApiUrl(), myUid, ChannelType.person, spaceId) : "";
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
           <Avatar className="h-7 w-7">
+            {avatarUrl && <AvatarImage src={avatarUrl} alt={name ?? "me"} />}
             <AvatarFallback className="text-xs">{getFirstChar(name ?? "?")}</AvatarFallback>
           </Avatar>
         </Button>
