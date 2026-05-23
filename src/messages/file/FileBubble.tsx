@@ -1,7 +1,12 @@
 import { Download } from "lucide-react";
-import { FileTypeIcon, formatFileSize } from "@/components/octo/FileTypeIcon";
+import { toast } from "sonner";
+import { browser } from "wxt/browser";
+import { FileTypeIcon, formatFileSize, getExtension } from "@/components/octo/FileTypeIcon";
 import { cn } from "@/utils/cn";
 import type { FileContent } from "./FileMessage";
+
+const PREVIEW_EXTS = new Set(["md", "markdown", "txt", "log", "json", "csv", "xlsx"]);
+const PREVIEW_SIZE_LIMIT = 2 * 1024 * 1024;
 
 export function FileBubble({ data }: { data: FileContent }) {
   function onDownload(e: React.MouseEvent | React.KeyboardEvent): void {
@@ -18,7 +23,26 @@ export function FileBubble({ data }: { data: FileContent }) {
   }
   function onPreview(): void {
     if (!data.url) return;
-    window.open(data.url, "_blank", "noopener,noreferrer");
+    const ext = getExtension(data.extension, data.name).toLowerCase();
+    if (!PREVIEW_EXTS.has(ext)) {
+      window.open(data.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    // size=0 表示后端没下发大小；这里宽松放行，预览页 fetch 完会用真实 byteLength 二次校验
+    if (data.size > PREVIEW_SIZE_LIMIT) {
+      toast.error("文件超过 2MB，无法预览，请直接下载");
+      return;
+    }
+    const params = new URLSearchParams({
+      url: data.url,
+      name: data.name || "file",
+      size: String(data.size || 0),
+      ext,
+    });
+    void browser.tabs.create({
+      url: browser.runtime.getURL(`/file-preview.html?${params.toString()}`),
+      active: true,
+    });
   }
 
   return (
