@@ -1,17 +1,15 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { getApiUrl } from "@/api/client";
 import { useChannelInfo } from "@/api/queries/channels";
-import { isChannelInfoBot } from "@/api/schemas/channel";
 import { useSpaceMembers } from "@/api/queries/spaces";
-import {
-  CmdkChannelPicker,
-  type PickedTarget,
-} from "@/cmdk/CmdkChannelPicker";
+import { isChannelInfoBot } from "@/api/schemas/channel";
+import type { PanelContext } from "@/cmdk/buildCmdkMessageText";
+import { CmdkChannelPicker, type PickedTarget } from "@/cmdk/CmdkChannelPicker";
 import { CmdkComposer, type CmdkComposerHandle } from "@/cmdk/CmdkComposer";
 import { CmdkLoggedOutNotice } from "@/cmdk/CmdkLoggedOutNotice";
 import { CmdkTopBar } from "@/cmdk/CmdkTopBar";
-import type { PanelContext } from "@/cmdk/buildCmdkMessageText";
 import { isInsidePortal } from "@/cmdk/overlaySelectors";
 import { useDraggable } from "@/cmdk/useDraggable";
 import { ChannelType } from "@/const/channel";
@@ -39,8 +37,7 @@ const EMPTY_CTX: PanelContext = {
   hostname: "",
 };
 
-const PANEL_SHADOW_REST =
-  "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12)";
+const PANEL_SHADOW_REST = "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12)";
 const PANEL_SHADOW_DRAG =
   "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12), 0 0 0 1px rgba(124, 92, 252, 0.28), 0 0 0 5px rgba(124, 92, 252, 0.08)";
 
@@ -121,6 +118,9 @@ function CmdkAppAuthed() {
   const [lastTarget, setLastTarget] = useState<PickedTarget | null>(null);
   const [defaultInited, setDefaultInited] = useState(false);
   const [defaultResolved, setDefaultResolved] = useState(false);
+  // 发送成功后立即隐藏面板，但保留 iframe 让右下角 toast 有时间显示。
+  // 实际拆 iframe 由父帧（CmdKOverlay）收到 DONE_MSG 后延时执行。
+  const [closing, setClosing] = useState(false);
 
   const { data: defaultInfo, isError: defaultInfoError } = useChannelInfo(
     defaultCh?.channelId ?? null,
@@ -128,16 +128,15 @@ function CmdkAppAuthed() {
   );
 
   useEffect(() => {
-    void Promise.all([
-      currentChannelItem.getValue(),
-      cmdkLastTargetStorage.getValue(),
-    ]).then(([curr, last]) => {
-      if (curr?.channelId) {
-        setDefaultCh({ channelId: curr.channelId, channelType: curr.channelType });
-      }
-      if (last) setLastTarget(last);
-      setDefaultInited(true);
-    });
+    void Promise.all([currentChannelItem.getValue(), cmdkLastTargetStorage.getValue()]).then(
+      ([curr, last]) => {
+        if (curr?.channelId) {
+          setDefaultCh({ channelId: curr.channelId, channelType: curr.channelType });
+        }
+        if (last) setLastTarget(last);
+        setDefaultInited(true);
+      },
+    );
   }, []);
 
   useEffect(() => {
@@ -146,8 +145,7 @@ function CmdkAppAuthed() {
     if (defaultCh) {
       if (defaultInfo) {
         const baseURL = getApiUrl();
-        const name =
-          defaultInfo.remark?.trim() || defaultInfo.name?.trim() || defaultCh.channelId;
+        const name = defaultInfo.remark?.trim() || defaultInfo.name?.trim() || defaultCh.channelId;
         let avatar: string | undefined;
         if (defaultCh.channelType === ChannelType.person) {
           const logo = defaultInfo.logo?.trim() || defaultInfo.avatar?.trim();
@@ -168,8 +166,7 @@ function CmdkAppAuthed() {
           channelType: defaultCh.channelType,
           name,
           avatar,
-          isBot:
-            defaultCh.channelType === ChannelType.person && isChannelInfoBot(defaultInfo),
+          isBot: defaultCh.channelType === ChannelType.person && isChannelInfoBot(defaultInfo),
         });
         setDefaultResolved(true);
         return;
@@ -184,7 +181,15 @@ function CmdkAppAuthed() {
     // 2) 没有 currentChannel → fallback lastTarget
     if (lastTarget) setPicked(lastTarget);
     setDefaultResolved(true);
-  }, [defaultResolved, defaultInited, defaultCh, defaultInfo, defaultInfoError, lastTarget, spaceId]);
+  }, [
+    defaultResolved,
+    defaultInited,
+    defaultCh,
+    defaultInfo,
+    defaultInfoError,
+    lastTarget,
+    spaceId,
+  ]);
 
   const longSel = ctx.selectedText.length > LONG_QUOTE_THRESHOLD;
 
@@ -201,9 +206,15 @@ function CmdkAppAuthed() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  function close(): void {
+  function close(message?: string): void {
     if (sentRef.current) return;
     sentRef.current = true;
+    if (message) {
+      // duration 略短于父帧 iframe 卸载延迟（CmdKOverlay 1800ms），让 toast
+      // 自然消失而不是被卸载强切。
+      toast.success(message, { duration: 1600 });
+    }
+    setClosing(true);
     window.parent?.postMessage({ type: DONE_MSG }, "*");
   }
 
@@ -232,6 +243,10 @@ function CmdkAppAuthed() {
     const files = Array.from(e.dataTransfer.files ?? []);
     if (files.length > 0) composerRef.current?.addFiles(files);
   }
+
+  // 已通知父帧关闭：立即收起面板与蒙层，仅靠 body 上的 Toaster 显示成功提示，
+  // 父帧负责在延迟后真正卸载 iframe。
+  if (closing) return null;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: 全屏区域，关闭语义已由 Esc 兜底

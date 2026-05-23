@@ -122,13 +122,15 @@ export function CmdKOverlay() {
       if (data.type === READY_MSG) {
         const ctx = pendingCtxRef.current;
         if (ctx && iframeRef.current?.contentWindow) {
-          iframeRef.current.contentWindow.postMessage(
-            { type: CONTEXT_MSG, payload: ctx },
-            "*",
-          );
+          iframeRef.current.contentWindow.postMessage({ type: CONTEXT_MSG, payload: ctx }, "*");
         }
       } else if (data.type === DONE_MSG) {
-        closePanel();
+        // 收到关闭信号：iframe 立即透事件，让用户能继续操作页面，
+        // 但延迟 1.8s 才真正卸载 —— 给 iframe 内 sonner Toaster
+        // 显示「已发送到 xxx」留出时间，避免一闪而过。
+        const iframe = iframeRef.current;
+        if (iframe) iframe.style.pointerEvents = "none";
+        window.setTimeout(closePanel, 1800);
       }
     }
     window.addEventListener("message", onMsg);
@@ -137,9 +139,7 @@ export function CmdKOverlay() {
 
   return (
     <>
-      {selRect && !open && (
-        <SelectionHint rect={selRect} onClick={() => openPanel(selText)} />
-      )}
+      {selRect && !open && <SelectionHint rect={selRect} onClick={() => openPanel(selText)} />}
       {open && (
         <iframe
           ref={iframeRef}
