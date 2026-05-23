@@ -33,7 +33,7 @@ export function useClearUnread() {
         .json();
     },
     onSuccess() {
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void qc.invalidateQueries({ queryKey: ["im", "conversations"] });
     },
   });
 }
@@ -68,7 +68,7 @@ export function useClearChannelMessages() {
         .json();
     },
     onSuccess() {
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void qc.invalidateQueries({ queryKey: ["im", "conversations"] });
     },
   });
 }
@@ -95,7 +95,7 @@ export function useExitGroup() {
       await api.post(Endpoints.groupExit(channelId)).json();
     },
     onSuccess() {
-      void qc.invalidateQueries({ queryKey: ["conversations"] });
+      void qc.invalidateQueries({ queryKey: ["im", "conversations"] });
     },
   });
 }

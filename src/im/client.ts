@@ -126,6 +126,17 @@ export function onImMessageRevoked(cb: (ev: RevokeEvent) => void): () => void {
     revokeSubs.delete(cb);
   };
 }
+/** 本地派发 revoke 事件（HTTP 撤回成功后调用，不依赖 SDK CMD 回推）。
+ *  useChannelMessages 监听器对 messageId 做幂等，CMD 真到达时不会重复处理。 */
+export function emitImMessageRevoked(ev: RevokeEvent): void {
+  for (const cb of revokeSubs) {
+    try {
+      cb(ev);
+    } catch (err) {
+      console.warn("[octo:im] emitImMessageRevoked subscriber threw", err);
+    }
+  }
+}
 
 const conversationsStaleSubs = new Set<() => void>();
 export function onConversationsStale(cb: () => void): () => void {

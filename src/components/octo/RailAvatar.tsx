@@ -1,4 +1,4 @@
-import { Headphones, Sparkles, Users } from "lucide-react";
+import { Headphones, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
 import {
@@ -29,15 +29,16 @@ interface RailAvatarProps {
 /**
  * Rail 上的 pin item 头像。
  *
- * 视觉规则（对照 .design/rail-pin-avatar.html 第 05 节）：
- *  - 私聊：圆形 26×26
- *  - 群聊：圆角方 32×32
- *  - 子区：父群头像（由 channelAvatarUrl 自动回落到 parent group）+ 右下 14px 圆形 # 角标，
+ * 视觉规则：
+ *  - 所有 channel 统一圆角方 32×32（`rounded-md`），形状一致便于扫视
+ *  - 子区：父群头像（由 channelAvatarUrl 自动回落到 parent group）+ 右下 18px 圆形 # 角标，
  *    颜色 hash 子区名 → 同群多个子区可视觉区分
+ *  - 群 / 客服 / AI：右下 18px 圆形角标
  *  - 真头像优先 → fallback 走 getInitials（双字符 / 词首缩写 / emoji）
+ *  - 描边：未激活也有一道极淡 ring（黑 8% / 暗色白 10%），让方头像在浅底色 rail 上有轮廓；
+ *    激活时覆盖为 ring-2 主色 + offset
  *  - 未读：右上 7px 红点
  *  - @me：右上 14px 橙色徽标（覆盖红点，但**不替换主体**，保留头像辨识）
- *  - 当前选中：ring-2 主色，描在容器外
  *  - 免打扰：整体 opacity 0.55，红点变灰
  */
 export function RailAvatar({
@@ -71,11 +72,9 @@ export function RailAvatar({
   const initials = getInitials(name);
   const fallbackBg = getTitleColor(name);
 
-  // Avatar 主体尺寸：私聊 26×26，其他 32×32
-  const avatarSize = isPrivate ? "h-[26px] w-[26px]" : "h-8 w-8";
-  const avatarShape = isPrivate ? "rounded-full" : "rounded-md";
+  // 统一圆角方头像 32×32
+  const avatarShape = "rounded-md";
 
-  // 容器始终 32×32 占位（私聊 26×26 居中），保证 rail 行高一致
   return (
     <div
       className={cn(
@@ -85,10 +84,13 @@ export function RailAvatar({
     >
       <Avatar
         className={cn(
-          "overflow-hidden",
-          avatarSize,
+          "h-8 w-8 overflow-hidden",
           avatarShape,
-          active && "ring-2 ring-(--color-primary) ring-offset-2 ring-offset-(--color-background)",
+          // 未激活：极淡描边，浅/暗主题各一套
+          "ring-1 ring-black/[0.08] dark:ring-white/10",
+          // 激活：indigo 贴边 2px（与 mention chip / composer 一致的 active 色，
+          // 避免用 --color-primary —— zinc 主题下它是接近黑色，框感太重）
+          active && "ring-2 ring-[#6366f1]",
         )}
       >
         {avatarUrl && (
@@ -98,7 +100,7 @@ export function RailAvatar({
           className={cn(
             "text-white font-semibold leading-none tracking-tight select-none",
             avatarShape,
-            initials.length >= 2 ? "text-[11px]" : isPrivate ? "text-[13px]" : "text-[15px]",
+            initials.length >= 2 ? "text-[11px]" : "text-[15px]",
           )}
           style={{ background: fallbackBg }}
         >
@@ -106,13 +108,13 @@ export function RailAvatar({
         </AvatarFallback>
       </Avatar>
 
-      {/* 右下角 14px 类型角标（channelType 互斥）：
-          子区 # / 群 Users / 客服 Headphones / AI Sparkles。
+      {/* 右下角 18px 类型角标（channelType 互斥）：
+          子区 # / 群 Users / 客服 Headphones / AI 文字。
           私聊普通用户不挂角标（圆形头像本身已足够辨识）。 */}
       {isThread && (
         <span
           aria-hidden
-          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[9px] font-extrabold leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[11px] font-black leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
           style={{ background: getThreadHueColor(name) }}
         >
           #
@@ -122,28 +124,28 @@ export function RailAvatar({
         <span
           aria-hidden
           title="群聊"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#3B82F6] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#3B82F6] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
         >
-          <Users className="h-[8px] w-[8px]" strokeWidth={2.75} />
+          <Users className="h-[11px] w-[11px]" strokeWidth={2.75} />
         </span>
       )}
       {isCs && (
         <span
           aria-hidden
           title="客服"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F59E0B] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F59E0B] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
         >
-          <Headphones className="h-[8px] w-[8px]" strokeWidth={2.75} />
+          <Headphones className="h-[11px] w-[11px]" strokeWidth={2.75} />
         </span>
       )}
       {isAi && (
         <span
           aria-hidden
           title="AI"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-white shadow-[0_1px_2px_rgba(123,137,244,0.45)]"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[9px] font-extrabold leading-none tracking-tight text-white shadow-[0_1px_2px_rgba(123,137,244,0.45)]"
           style={{ background: "linear-gradient(135deg, #7B89F4 0%, #9D78F5 100%)" }}
         >
-          <Sparkles className="h-[8px] w-[8px]" strokeWidth={2.75} />
+          AI
         </span>
       )}
 
