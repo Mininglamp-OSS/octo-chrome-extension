@@ -1,3 +1,4 @@
+import { Headphones, Sparkles, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
 import {
@@ -21,6 +22,8 @@ interface RailAvatarProps {
   spaceId?: string | null;
   /** channelInfo.logo 优先于推算 URL */
   logo?: string;
+  /** 私聊场景下，channelId 是否为 AI bot —— 由调用方反查 botSet/channelInfo 后传入 */
+  isBot?: boolean;
 }
 
 /**
@@ -48,9 +51,13 @@ export function RailAvatar({
   baseURL,
   spaceId,
   logo,
+  isBot,
 }: RailAvatarProps) {
   const isPrivate = channelType === ChannelType.person;
   const isThread = channelType === ChannelType.communityTopic;
+  const isGroup = channelType === ChannelType.group;
+  const isCs = channelType === ChannelType.customerService;
+  const isAi = isPrivate && !!isBot;
   const hasMention = mentionCount > 0;
   const hasUnread = unread > 0 && !hasMention;
 
@@ -99,7 +106,9 @@ export function RailAvatar({
         </AvatarFallback>
       </Avatar>
 
-      {/* 子区角标：右下 14px 圆形 # */}
+      {/* 右下角 14px 类型角标（channelType 互斥）：
+          子区 # / 群 Users / 客服 Headphones / AI Sparkles。
+          私聊普通用户不挂角标（圆形头像本身已足够辨识）。 */}
       {isThread && (
         <span
           aria-hidden
@@ -107,6 +116,34 @@ export function RailAvatar({
           style={{ background: getThreadHueColor(name) }}
         >
           #
+        </span>
+      )}
+      {isGroup && (
+        <span
+          aria-hidden
+          title="群聊"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#3B82F6] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+        >
+          <Users className="h-[8px] w-[8px]" strokeWidth={2.75} />
+        </span>
+      )}
+      {isCs && (
+        <span
+          aria-hidden
+          title="客服"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F59E0B] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+        >
+          <Headphones className="h-[8px] w-[8px]" strokeWidth={2.75} />
+        </span>
+      )}
+      {isAi && (
+        <span
+          aria-hidden
+          title="AI"
+          className="absolute -right-[3px] -bottom-[3px] grid h-[14px] w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-white shadow-[0_1px_2px_rgba(123,137,244,0.45)]"
+          style={{ background: "linear-gradient(135deg, #7B89F4 0%, #9D78F5 100%)" }}
+        >
+          <Sparkles className="h-[8px] w-[8px]" strokeWidth={2.75} />
         </span>
       )}
 

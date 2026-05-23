@@ -3,8 +3,10 @@ import { useMemo } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { usePinned } from "@/api/queries/pinned";
-import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
+import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import type { ConversationView } from "@/im/conversation";
 import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
@@ -21,6 +23,7 @@ interface RailItem {
   mentionCount: number;
   muted: boolean;
   logo?: string;
+  isBot: boolean;
 }
 
 interface Props {
@@ -54,6 +57,7 @@ export function VerticalRail({ onShowPicker }: Props) {
   const atMeCounts = useAtMeStore((s) => s.counts);
   const spaceId = useSpaceStore(selectCurrentSpaceId);
   const baseURL = getApiUrl();
+  const botSet = useBotUidSet();
 
   // 与 mirror 一致：rail 显示名走 channelInfo.orgData.displayName（remark || name）
   // 而非 conversation.name。pinned 列表按需为每项拉一次 channelInfo（TanStack Query 自动缓存去重）。
@@ -82,6 +86,9 @@ export function VerticalRail({ onShowPicker }: Props) {
       const info = channelInfoQueries[idx]?.data;
       const fallback = c?.name ?? p.channel_id;
       const logo = info?.logo?.trim();
+      const isBot =
+        p.channel_type === ChannelType.person &&
+        (botSet.has(p.channel_id) || isChannelInfoBot(info));
       list.push({
         channelId: p.channel_id,
         channelType: p.channel_type,
@@ -89,11 +96,12 @@ export function VerticalRail({ onShowPicker }: Props) {
         unread: c?.unread ?? 0,
         mentionCount: Math.max(c?.mentionCount ?? 0, live),
         muted: false,
+        isBot,
         ...(logo && { logo }),
       });
     });
     return { visible: list, hiddenCount: Math.max(0, conversations.length - list.length) };
-  }, [conversations, pinnedItems, atMeCounts, channelInfoQueries]);
+  }, [conversations, pinnedItems, atMeCounts, channelInfoQueries, botSet]);
 
   if (visible.length === 0 && hiddenCount === 0) return null;
 
@@ -123,6 +131,7 @@ export function VerticalRail({ onShowPicker }: Props) {
                   active={isCurrent}
                   baseURL={baseURL}
                   spaceId={spaceId}
+                  isBot={item.isBot}
                   {...(item.logo && { logo: item.logo })}
                 />
               </button>
