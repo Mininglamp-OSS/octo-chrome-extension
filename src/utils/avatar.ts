@@ -121,9 +121,7 @@ const avatarTags = new Map<string, string>();
  * 写入用 dirty + 500ms debounce flush，避免短时间内高频拼 URL 触发同步 IO。
  */
 const TAGS_STORAGE_KEY = "local:octo:avatar-tags" as const;
-let _tagsItem: ReturnType<
-  typeof storage.defineItem<Record<string, string>>
-> | null = null;
+let _tagsItem: ReturnType<typeof storage.defineItem<Record<string, string>>> | null = null;
 let tagsDirty = false;
 let tagsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -149,7 +147,9 @@ function scheduleTagsFlush(): void {
     tagsDirty = false;
     const obj: Record<string, string> = {};
     for (const [k, v] of avatarTags) obj[k] = v;
-    void tagsItem().setValue(obj).catch(() => {});
+    void tagsItem()
+      .setValue(obj)
+      .catch(() => {});
   }, 500);
 }
 
@@ -197,9 +197,32 @@ function getDefaultAvatarTag(channelId: string, channelType: number): string {
 /** 主动 invalidate 一个头像 tag（用户改了头像、上传新 logo 时调）。 */
 export function bumpAvatarTag(channelId: string, channelType: number): void {
   const key = `${channelType}:${channelId}`;
-  avatarTags.set(key, Date.now().toString());
+  const now = Date.now();
+  avatarTags.set(key, now.toString());
+  tagBumpTimes.set(key, now);
   tagsDirty = true;
   scheduleTagsFlush();
+}
+
+/** 上次 bump 时间（含被动 / 主动），用于 bumpAvatarTagIfStale 限流。 */
+const tagBumpTimes = new Map<string, number>();
+
+/**
+ * 列表场景的「保新鲜」bump：tag 比 maxAgeMs 旧才换新。
+ * 用在 sidepanel 重新 mount 时主动让 disk cache 失效，避免群头像（多人拼图）
+ * 因为浏览器命中本地缓存而长期看到旧合成图。返回是否实际 bump。
+ */
+export function bumpAvatarTagIfStale(
+  channelId: string,
+  channelType: number,
+  maxAgeMs: number,
+): boolean {
+  const key = `${channelType}:${channelId}`;
+  const now = Date.now();
+  const last = tagBumpTimes.get(key) ?? 0;
+  if (now - last < maxAgeMs) return false;
+  bumpAvatarTag(channelId, channelType);
+  return true;
 }
 
 /**

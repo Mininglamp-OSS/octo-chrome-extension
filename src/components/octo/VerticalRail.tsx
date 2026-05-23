@@ -1,5 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { usePinned } from "@/api/queries/pinned";
@@ -12,6 +12,7 @@ import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
+import { bumpAvatarTagIfStale } from "@/utils/avatar";
 import { RailAvatar } from "./RailAvatar";
 import { RailHoverCard } from "./RailHoverCard";
 
@@ -60,7 +61,9 @@ export function VerticalRail({ onShowPicker }: Props) {
   const botSet = useBotUidSet();
 
   // 与 mirror 一致：rail 显示名走 channelInfo.orgData.displayName（remark || name）
-  // 而非 conversation.name。pinned 列表按需为每项拉一次 channelInfo（TanStack Query 自动缓存去重）。
+  // 而非 conversation.name。pinned 列表按需为每项拉一次 channelInfo。
+  // staleTime=0 + refetchOnMount=always：每次 sidepanel mount 都后台 refetch，
+  // 让群头像 / 名字 / logo 等改动能反映到 rail（IDB persist 仅作首屏占位，SWR 模式）。
   const channelInfoQueries = useQueries({
     queries: (pinnedItems ?? []).map((p) => ({
       queryKey: ["channel", p.channel_type, p.channel_id],
@@ -68,9 +71,26 @@ export function VerticalRail({ onShowPicker }: Props) {
         const data = await api.get(Endpoints.channelInfo(p.channel_id, p.channel_type)).json();
         return ChannelInfoSchema.parse(data);
       },
-      staleTime: 5 * 60_000,
+      staleTime: 0,
+      refetchOnMount: "always" as const,
     })),
   });
+
+  // mount 时给每个 pin 头像 tag 限流式 bump（5 分钟内最多一次），强制 disk cache miss。
+  // 即便 channelInfo.logo 字段不变（path 稳定），群多人拼图等服务端动态合成的图也能
+  // 看到最新版本。bumpAvatarTagIfStale 内部限流，开关 sidepanel 不会真的每次都刷网络。
+  // nonce 仅用来触发 re-render，让 RailAvatar 重新调 resolveAvatarUrl 拿到新 tag。
+  const [, setTagNonce] = useState(0);
+  useEffect(() => {
+    if (!pinnedItems || pinnedItems.length === 0) return;
+    let bumped = false;
+    for (const p of pinnedItems) {
+      if (bumpAvatarTagIfStale(p.channel_id, p.channel_type, 5 * 60_000)) {
+        bumped = true;
+      }
+    }
+    if (bumped) setTagNonce((n) => n + 1);
+  }, [pinnedItems]);
 
   const { visible, hiddenCount } = useMemo(() => {
     const convMap = new Map<string, ConversationView>();
@@ -101,6 +121,8 @@ export function VerticalRail({ onShowPicker }: Props) {
       });
     });
     return { visible: list, hiddenCount: Math.max(0, conversations.length - list.length) };
+    // tagNonce 不进 useMemo deps（useMemo 体内未消费）；setTagNonce 已触发整体 re-render，
+    // RailAvatar 内部 resolveAvatarUrl 会在 render 时同步重新取最新 avatarTag。
   }, [conversations, pinnedItems, atMeCounts, channelInfoQueries, botSet]);
 
   if (visible.length === 0 && hiddenCount === 0) return null;
