@@ -13,14 +13,12 @@ const BTN_H = 28;
 export function SelectionHint({ rect, onClick }: SelectionHintProps) {
   const [hover, setHover] = useState(false);
 
-  // 临时调试：默认放在选区「上方」，避免和 cmd k 面板调试时互相挡。
-  // 上方空间不够才回落到下方。
-  let top = rect.top - BTN_H - 6;
-  if (top < 4) top = rect.bottom + 6;
+  // 默认放选区正下方水平居中，下方放不下才翻到上方（mirror SelectionHint 同款）
+  let top = rect.bottom + 6;
   let left = rect.left + (rect.width - BTN_W) / 2;
   if (left < 4) left = 4;
   if (left + BTN_W > window.innerWidth - 4) left = window.innerWidth - BTN_W - 4;
-  if (top + BTN_H > window.innerHeight - 4) top = window.innerHeight - BTN_H - 4;
+  if (top + BTN_H > window.innerHeight - 4) top = rect.top - BTN_H - 6;
   if (top < 4) top = 4;
 
   return (
