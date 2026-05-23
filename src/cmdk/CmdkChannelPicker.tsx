@@ -1,11 +1,10 @@
-import { useQueries } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, getApiUrl } from "@/api/client";
-import { Endpoints } from "@/api/endpoints";
+import { getApiUrl } from "@/api/client";
 import { useCategories } from "@/api/queries/categories";
+import { useChannelInfos } from "@/api/queries/channels";
 import { useFriends } from "@/api/queries/contacts";
-import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { isChannelInfoBot } from "@/api/schemas/channel";
 import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
@@ -44,8 +43,7 @@ interface CmdkChannelPickerProps {
   onCancel: () => void;
 }
 
-const keyOf = (t: { channelType: number; channelId: string }) =>
-  `${t.channelType}:${t.channelId}`;
+const keyOf = (t: { channelType: number; channelId: string }) => `${t.channelType}:${t.channelId}`;
 
 function typeBadge(type: number): string {
   if (type === ChannelType.person) return "联系人";
@@ -86,11 +84,7 @@ function highlight(name: string, kw: string): React.ReactNode {
  *  - 搜索态：最近 → 联系人 → 频道 → 子区（全部本地，无远程调用）
  *  - 数据源全是 React Query 已缓存的 query（useConversationViews / useFriends / useCategories）
  */
-export function CmdkChannelPicker({
-  current,
-  onPick,
-  onCancel,
-}: CmdkChannelPickerProps) {
+export function CmdkChannelPicker({ current, onPick, onCancel }: CmdkChannelPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [keyword, setKeyword] = useState("");
 
@@ -100,19 +94,16 @@ export function CmdkChannelPicker({
   const { data: friends } = useFriends();
   const botSet = useBotUidSet();
 
-  // 给最近会话拉 channelInfo（解决真名 / logo）
-  const recentInfoQueries = useQueries({
-    queries: conversations.map((c) => ({
-      queryKey: ["channel", c.channelType, c.channelId],
-      async queryFn(): Promise<ChannelInfo> {
-        const data = await api
-          .get(Endpoints.channelInfo(c.channelId, c.channelType))
-          .json();
-        return ChannelInfoSchema.parse(data);
-      },
-      staleTime: 5 * 60_000,
-    })),
-  });
+  // 给最近会话拉 channelInfo（解决真名 / logo）；缓存策略走 useChannelInfos 默认配置
+  const recentInfoItems = useMemo(
+    () =>
+      conversations.map((c) => ({
+        channelId: c.channelId,
+        channelType: c.channelType,
+      })),
+    [conversations],
+  );
+  const recentInfoQueries = useChannelInfos(recentInfoItems);
 
   // ── 派生四类 targets ──
 
@@ -142,8 +133,7 @@ export function CmdkChannelPicker({
           : channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
       }
       const isBot =
-        c.channelType === ChannelType.person &&
-        (botSet.has(c.channelId) || isChannelInfoBot(info));
+        c.channelType === ChannelType.person && (botSet.has(c.channelId) || isChannelInfoBot(info));
       return {
         channelId: c.channelId,
         channelType: c.channelType,
@@ -184,21 +174,14 @@ export function CmdkChannelPicker({
         channelId: g.group_no,
         channelType: ChannelType.group,
         name: g.name,
-        avatar: channelAvatarUrl(
-          baseURL,
-          g.group_no,
-          ChannelType.group,
-          spaceId,
-        ),
+        avatar: channelAvatarUrl(baseURL, g.group_no, ChannelType.group, spaceId),
       })),
     );
   }, [categories, spaceId]);
 
   // 4) 子区：从 conversations 里取 communityTopic 类型（v1 不做全 space 子区枚举）
   const topicTargets = useMemo<PickedTarget[]>(() => {
-    return recentTargets.filter(
-      (t) => t.channelType === ChannelType.communityTopic,
-    );
+    return recentTargets.filter((t) => t.channelType === ChannelType.communityTopic);
   }, [recentTargets]);
 
   // ── 合并 rows ──
@@ -208,11 +191,7 @@ export function CmdkChannelPicker({
     const out: PickerRow[] = [];
     const match = (n: string) => !k || n.toLowerCase().includes(k);
 
-    const pushSec = (
-      section: string,
-      label: string,
-      list: PickedTarget[],
-    ): void => {
+    const pushSec = (section: string, label: string, list: PickedTarget[]): void => {
       const hits = list.filter((t) => match(t.name) && !seen.has(keyOf(t)));
       if (!hits.length) return;
       out.push({ kind: "header", key: `h:${section}`, label });
@@ -311,15 +290,11 @@ export function CmdkChannelPicker({
           }
           if (r.kind === "empty") {
             return (
-              <div
-                key={r.key}
-                className="flex flex-col items-center justify-center py-10"
-              >
+              <div key={r.key} className="flex flex-col items-center justify-center py-10">
                 <span
                   className="mb-3 bg-clip-text text-[30px] leading-none text-transparent"
                   style={{
-                    backgroundImage:
-                      "linear-gradient(135deg, #7C5CFC 0%, #00D4AA 100%)",
+                    backgroundImage: "linear-gradient(135deg, #7C5CFC 0%, #00D4AA 100%)",
                   }}
                 >
                   ✦

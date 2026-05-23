@@ -9,26 +9,20 @@ import {
 } from "@dnd-kit/core";
 import { arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useQueries } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AtSign, Hash, Layers, Pin } from "lucide-react";
 import { type CSSProperties, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api, getApiUrl } from "@/api/client";
-import { Endpoints } from "@/api/endpoints";
-import {
-  useCategories,
-  useMoveGroupToCategory,
-  useSortCategories,
-} from "@/api/queries/categories";
+import { getApiUrl } from "@/api/client";
+import { useCategories, useMoveGroupToCategory, useSortCategories } from "@/api/queries/categories";
 import {
   useClearChannelMessages,
   useClearUnread,
   useToggleConversationTop,
 } from "@/api/queries/channelActions";
-import { useChannelInfo } from "@/api/queries/channels";
+import { useChannelInfo, useChannelInfos } from "@/api/queries/channels";
 // /user/pinned (Rail Pin) 与会话置顶 (stick) 是两套，本文件不再使用 Rail Pin 数据
-import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { type ChannelInfo, isChannelInfoBot } from "@/api/schemas/channel";
 import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -39,8 +33,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { ChannelType } from "@/const/channel";
-import { useExpandedThreadGroups, parseParentGroupNo } from "@/hooks/useExpandedThreadGroups";
 import { useBotUidSet } from "@/hooks/useBotUidSet";
+import { parseParentGroupNo, useExpandedThreadGroups } from "@/hooks/useExpandedThreadGroups";
 import type { ConversationView } from "@/im/conversation";
 import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
@@ -92,8 +86,7 @@ interface SectionedItem {
 
 export function ConversationList({ picker = false, filter }: ConversationListProps = {}) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const { conversations: rawConversations, isLoading, error } =
-    useConversationViews();
+  const { conversations: rawConversations, isLoading, error } = useConversationViews();
   const select = useCurrentChannel((s) => s.select);
   const channelId = useCurrentChannel((s) => s.channelId);
   const channelType = useCurrentChannel((s) => s.channelType);
@@ -111,30 +104,23 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
     if (!filter) return rawConversations;
     if (filter === "group") {
       return rawConversations.filter(
-        (c) =>
-          c.channelType === ChannelType.group ||
-          c.channelType === ChannelType.communityTopic,
+        (c) => c.channelType === ChannelType.group || c.channelType === ChannelType.communityTopic,
       );
     }
     return rawConversations.filter(
-      (c) =>
-        c.channelType === ChannelType.person ||
-        c.channelType === ChannelType.customerService,
+      (c) => c.channelType === ChannelType.person || c.channelType === ChannelType.customerService,
     );
   }, [rawConversations, filter]);
 
-  const infoQueries = useQueries({
-    queries: conversations.map((c) => ({
-      queryKey: ["channel", c.channelType, c.channelId],
-      async queryFn(): Promise<ChannelInfo> {
-        const data = await api
-          .get(Endpoints.channelInfo(c.channelId, c.channelType))
-          .json();
-        return ChannelInfoSchema.parse(data);
-      },
-      staleTime: 5 * 60_000,
-    })),
-  });
+  const infoItems = useMemo(
+    () =>
+      conversations.map((c) => ({
+        channelId: c.channelId,
+        channelType: c.channelType,
+      })),
+    [conversations],
+  );
+  const infoQueries = useChannelInfos(infoItems);
   const infoByKey = useMemo(() => {
     const m = new Map<string, ChannelInfo>();
     conversations.forEach((c, i) => {
@@ -151,10 +137,7 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
   function resolveAvatarUrl(c: ConversationView): string {
     const info = infoByKey.get(`${c.channelId}:${c.channelType}`);
     const baseURL = getApiUrl();
-    if (
-      c.channelType === ChannelType.person ||
-      c.channelType === ChannelType.customerService
-    ) {
+    if (c.channelType === ChannelType.person || c.channelType === ChannelType.customerService) {
       const logo = info?.logo?.trim();
       return resolvePersonAvatar({
         baseURL,
@@ -225,15 +208,13 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
 
     // === filter='dm'：纯平铺，无 category/子区 ===
     if (filter === "dm") {
-      for (const c of sortInSection(all))
-        out.push({ type: "item", conv: c, pinned: c.pinned });
+      for (const c of sortInSection(all)) out.push({ type: "item", conv: c, pinned: c.pinned });
       return out;
     }
 
     // === 群 + 主屏路径（mirror 不单独"置顶"段，归属看后端 categories） ===
 
-    const useCategorySections =
-      spaceId !== null && (categories?.length ?? 0) > 0;
+    const useCategorySections = spaceId !== null && (categories?.length ?? 0) > 0;
 
     // 没有 category：直接平铺所有
     if (!useCategorySections) {
@@ -299,8 +280,7 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
         sectionMention: agg.mention,
       });
       if (!isCol)
-        for (const c of sortedPersonal)
-          out.push({ type: "item", conv: c, pinned: c.pinned });
+        for (const c of sortedPersonal) out.push({ type: "item", conv: c, pinned: c.pinned });
     }
 
     for (const cat of categories ?? []) {
@@ -343,20 +323,10 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
     }
 
     return out;
-  }, [
-    conversations,
-    spaceId,
-    categories,
-    collapsed,
-    filter,
-    atMeCounts,
-    expandedThreads,
-  ]);
+  }, [conversations, spaceId, categories, collapsed, filter, atMeCounts, expandedThreads]);
 
   // 仅"群条"可作为 drag source（子区 / dm / 客服 不参与）
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-  );
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   // 拖动中的对象：group conv 或 category（用于 DragOverlay + 源 row 半透明）
   type ActiveDrag =
@@ -394,12 +364,8 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
       // 默认分组也允许重排（mirror 把它隐藏所以追加在尾部，octo-ext 显示默认分组就直接全量）
       const cats = categories ?? [];
       const overIdStr = String(over.id);
-      const oldIdx = cats.findIndex(
-        (c) => `cat::${c.category_id}` === String(active.id),
-      );
-      const newIdx = cats.findIndex(
-        (c) => `cat::${c.category_id}` === overIdStr,
-      );
+      const oldIdx = cats.findIndex((c) => `cat::${c.category_id}` === String(active.id));
+      const newIdx = cats.findIndex((c) => `cat::${c.category_id}` === overIdStr);
       if (oldIdx < 0 || newIdx < 0) {
         toast("拖到分组名字上松手才能排序");
         return;
@@ -468,8 +434,6 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
     overscan: 8,
   });
 
-
-
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-6 text-sm text-(--color-destructive)">
@@ -505,9 +469,7 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
             | { type?: "group" | "category"; categoryId?: string | null }
             | undefined;
           if (d?.type === "category" && d.categoryId) {
-            const cat = (categories ?? []).find(
-              (c) => c.category_id === d.categoryId,
-            );
+            const cat = (categories ?? []).find((c) => c.category_id === d.categoryId);
             if (cat) {
               setActiveDrag({
                 type: "category",
@@ -540,142 +502,133 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
       >
         <div ref={parentRef} className="h-full overflow-y-auto">
           <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-              {virtualizer.getVirtualItems().map((vi) => {
-                const it = items[vi.index];
-                if (!it) return null;
+            {virtualizer.getVirtualItems().map((vi) => {
+              const it = items[vi.index];
+              if (!it) return null;
 
-                if (it.type === "header") {
-                  if (!it.sectionId) return null;
-                  const sid = it.sectionId;
-                  const isDefault = it.isDefault ?? false;
-                  return (
-                    <CategorySection
-                      key={`h-${sid}`}
-                      categoryId={it.categoryId ?? null}
-                      sortableId={null}
-                      name={it.label ?? ""}
-                      count={it.count ?? 0}
-                      unreadCount={it.sectionUnread ?? 0}
-                      hasMention={it.sectionMention ?? false}
-                      collapsed={it.collapsed ?? false}
-                      isDefault={isDefault}
-                      orderedCategoryIds={
-                        (categories ?? [])
-                          .map((c) => c.category_id)
-                          .filter((id): id is string => Boolean(id))
-                      }
-                      onToggle={() => toggleCollapse(sid)}
-                      topPx={vi.start}
-                      heightPx={vi.size}
-                    />
-                  );
-                }
+              if (it.type === "header") {
+                if (!it.sectionId) return null;
+                const sid = it.sectionId;
+                const isDefault = it.isDefault ?? false;
+                return (
+                  <CategorySection
+                    key={`h-${sid}`}
+                    categoryId={it.categoryId ?? null}
+                    sortableId={null}
+                    name={it.label ?? ""}
+                    count={it.count ?? 0}
+                    unreadCount={it.sectionUnread ?? 0}
+                    hasMention={it.sectionMention ?? false}
+                    collapsed={it.collapsed ?? false}
+                    isDefault={isDefault}
+                    orderedCategoryIds={(categories ?? [])
+                      .map((c) => c.category_id)
+                      .filter((id): id is string => Boolean(id))}
+                    onToggle={() => toggleCollapse(sid)}
+                    topPx={vi.start}
+                    heightPx={vi.size}
+                  />
+                );
+              }
 
-                if (it.type === "thread") {
-                  const conv = it.conv;
-                  if (!conv) return null;
-                  return (
-                    <ThreadRow
-                      key={`t-${conv.channelId}`}
-                      conv={conv}
-                      isCurrent={
-                        conv.channelId === channelId &&
-                        conv.channelType === channelType
-                      }
-                      atCount={Math.max(
-                        conv.mentionCount,
-                        atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
-                      )}
-                      displayName={resolveDisplayName(conv)}
-                      threadLast={it.threadLast ?? false}
-                      onSelect={() => select(conv.channelId, conv.channelType)}
-                      topPx={vi.start}
-                      heightPx={vi.size}
-                    />
-                  );
-                }
-
+              if (it.type === "thread") {
                 const conv = it.conv;
                 if (!conv) return null;
-                const categoryOfConv = (() => {
-                  if (filter === "dm") return null;
-                  for (const cat of categories ?? []) {
-                    if (cat.groups.some((g) => g.group_no === conv.channelId)) {
-                      return cat.category_id ?? null;
-                    }
-                  }
-                  return null;
-                })();
-                const hasThreads =
-                  conv.channelType === ChannelType.group &&
-                  rawConversations.some(
-                    (c) =>
-                      c.channelType === ChannelType.communityTopic &&
-                      parseParentGroupNo(c.channelId) === conv.channelId,
-                  );
                 return (
-                  <ConvRow
-                    key={`${conv.channelId}:${conv.channelType}`}
+                  <ThreadRow
+                    key={`t-${conv.channelId}`}
                     conv={conv}
-                    pinned={it.pinned ?? conv.pinned}
-                    isCurrent={
-                      conv.channelId === channelId && conv.channelType === channelType
-                    }
+                    isCurrent={conv.channelId === channelId && conv.channelType === channelType}
                     atCount={Math.max(
                       conv.mentionCount,
                       atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
                     )}
                     displayName={resolveDisplayName(conv)}
-                    avatarUrl={resolveAvatarUrl(conv)}
+                    threadLast={it.threadLast ?? false}
                     onSelect={() => select(conv.channelId, conv.channelType)}
                     topPx={vi.start}
                     heightPx={vi.size}
-                    sortable={
-                      filter !== "dm" && conv.channelType === ChannelType.group
-                    }
-                    categoryOfConv={categoryOfConv}
-                    picker={picker}
-                    hasThreads={hasThreads}
-                    threadsExpanded={expandedThreads.isExpanded(conv.channelId)}
-                    onToggleThreads={() => expandedThreads.toggle(conv.channelId)}
                   />
                 );
-              })}
-            </div>
-          </div>
+              }
 
-          <DragOverlay dropAnimation={null}>
-            {activeDrag?.type === "group" ? (
-              <div
-                className="flex h-9 w-fit max-w-[220px] items-center gap-2 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
-                style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
-              >
-                <Avatar className="h-[26px] w-[26px] shrink-0">
-                  {activeDrag.avatarUrl && (
-                    <AvatarImage src={activeDrag.avatarUrl} alt={activeDrag.name} />
+              const conv = it.conv;
+              if (!conv) return null;
+              const categoryOfConv = (() => {
+                if (filter === "dm") return null;
+                for (const cat of categories ?? []) {
+                  if (cat.groups.some((g) => g.group_no === conv.channelId)) {
+                    return cat.category_id ?? null;
+                  }
+                }
+                return null;
+              })();
+              const hasThreads =
+                conv.channelType === ChannelType.group &&
+                rawConversations.some(
+                  (c) =>
+                    c.channelType === ChannelType.communityTopic &&
+                    parseParentGroupNo(c.channelId) === conv.channelId,
+                );
+              return (
+                <ConvRow
+                  key={`${conv.channelId}:${conv.channelType}`}
+                  conv={conv}
+                  pinned={it.pinned ?? conv.pinned}
+                  isCurrent={conv.channelId === channelId && conv.channelType === channelType}
+                  atCount={Math.max(
+                    conv.mentionCount,
+                    atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
                   )}
-                  <AvatarFallback
-                    className="text-white text-xs"
-                    style={{ background: avatarGradient(activeDrag.name) }}
-                  >
-                    {getFirstChar(activeDrag.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="truncate text-[13px] font-medium text-(--color-foreground)">
-                  {activeDrag.name}
-                </span>
-              </div>
-            ) : activeDrag?.type === "category" ? (
-              <div
-                className="flex h-7 w-fit max-w-[200px] items-center gap-1 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
-                style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
-              >
-                <span className="truncate text-[12px] font-medium text-(--color-foreground)">
-                  {activeDrag.name}
-                </span>
-              </div>
-            ) : null}
-          </DragOverlay>
+                  displayName={resolveDisplayName(conv)}
+                  avatarUrl={resolveAvatarUrl(conv)}
+                  onSelect={() => select(conv.channelId, conv.channelType)}
+                  topPx={vi.start}
+                  heightPx={vi.size}
+                  sortable={filter !== "dm" && conv.channelType === ChannelType.group}
+                  categoryOfConv={categoryOfConv}
+                  picker={picker}
+                  hasThreads={hasThreads}
+                  threadsExpanded={expandedThreads.isExpanded(conv.channelId)}
+                  onToggleThreads={() => expandedThreads.toggle(conv.channelId)}
+                />
+              );
+            })}
+          </div>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {activeDrag?.type === "group" ? (
+            <div
+              className="flex h-9 w-fit max-w-[220px] items-center gap-2 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
+              style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
+            >
+              <Avatar className="h-[26px] w-[26px] shrink-0">
+                {activeDrag.avatarUrl && (
+                  <AvatarImage src={activeDrag.avatarUrl} alt={activeDrag.name} />
+                )}
+                <AvatarFallback
+                  className="text-white text-xs"
+                  style={{ background: avatarGradient(activeDrag.name) }}
+                >
+                  {getFirstChar(activeDrag.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span className="truncate text-[13px] font-medium text-(--color-foreground)">
+                {activeDrag.name}
+              </span>
+            </div>
+          ) : activeDrag?.type === "category" ? (
+            <div
+              className="flex h-7 w-fit max-w-[200px] items-center gap-1 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
+              style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
+            >
+              <span className="truncate text-[12px] font-medium text-(--color-foreground)">
+                {activeDrag.name}
+              </span>
+            </div>
+          ) : null}
+        </DragOverlay>
       </DndContext>
     </>
   );
@@ -896,12 +849,7 @@ function ConvRowBody({
         </span>
       )}
 
-      <Avatar
-        className={cn(
-          "shrink-0",
-          picker ? "h-[26px] w-[26px]" : "h-10 w-10",
-        )}
-      >
+      <Avatar className={cn("shrink-0", picker ? "h-[26px] w-[26px]" : "h-10 w-10")}>
         {avatarUrl && (
           <AvatarImage
             src={avatarUrl}
@@ -1139,17 +1087,10 @@ function ConvMenuItems({ conv }: { conv: ConversationView }) {
         {isPinned ? "取消置顶" : "置顶"}
       </ContextMenuItem>
       {isGroup && (
-        <ContextMenuItem
-          onSelect={() => openMoveTo(conv.channelId)}
-        >
-          移动到分组…
-        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => openMoveTo(conv.channelId)}>移动到分组…</ContextMenuItem>
       )}
       <ContextMenuSeparator />
-      <ContextMenuItem
-        className="text-(--color-destructive)"
-        onSelect={() => void onClear()}
-      >
+      <ContextMenuItem className="text-(--color-destructive)" onSelect={() => void onClear()}>
         清空消息
       </ContextMenuItem>
     </>

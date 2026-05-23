@@ -1,11 +1,12 @@
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
+import { useChannelInfos } from "@/api/queries/channels";
 import { useFriends } from "@/api/queries/contacts";
-import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { isChannelInfoBot } from "@/api/schemas/channel";
 import { type SearchResult, SearchResultSchema } from "@/api/schemas/search";
 import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -261,17 +262,11 @@ function ResultList({
   // 不再对几千条 friends 发请求 → 修复"点搜索按钮就崩"的请求洪峰
   const isSearchingContacts = tab === "contacts" && keyword.trim() !== "";
   const contactUids = isSearchingContacts ? friends.map((f) => f.uid).slice(0, 30) : [];
-  const contactInfoQueries = useQueries({
-    queries: contactUids.map((uid) => ({
-      queryKey: ["channel", ChannelType.person, uid] as const,
-      enabled: Boolean(uid),
-      staleTime: 5 * 60_000,
-      async queryFn(): Promise<ChannelInfo> {
-        const data = await api.get(Endpoints.channelInfo(uid, ChannelType.person)).json();
-        return ChannelInfoSchema.parse(data);
-      },
-    })),
-  });
+  const contactInfoItems = useMemo(
+    () => contactUids.map((uid) => ({ channelId: uid, channelType: ChannelType.person })),
+    [contactUids],
+  );
+  const contactInfoQueries = useChannelInfos(contactInfoItems);
   const channelBotSet = useMemo(() => {
     const set = new Set<string>();
     contactUids.forEach((uid, i) => {

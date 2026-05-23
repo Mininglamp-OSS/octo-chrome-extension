@@ -1,9 +1,8 @@
-import { useQueries } from "@tanstack/react-query";
 import { Fragment, useCallback, useLayoutEffect, useMemo, useRef } from "react";
-import { api, getApiUrl } from "@/api/client";
-import { Endpoints } from "@/api/endpoints";
+import { getApiUrl } from "@/api/client";
+import { useChannelInfos } from "@/api/queries/channels";
 import { useChannelMembers } from "@/api/queries/members";
-import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
+import type { ChannelInfo } from "@/api/schemas/channel";
 import { ChannelType } from "@/const/channel";
 import { dedupKey } from "@/im/hooks/useChannelMessages";
 import type { MessageView } from "@/im/message";
@@ -103,16 +102,11 @@ export function MessageList({ messages, hasMore, loadingMore, onLoadMore }: Mess
     return m;
   }, [members]);
   const senderUids = useMemo(() => Array.from(new Set(messages.map((m) => m.fromUid))), [messages]);
-  const senderInfoQueries = useQueries({
-    queries: senderUids.map((uid) => ({
-      queryKey: ["channel", ChannelType.person, uid],
-      async queryFn(): Promise<ChannelInfo> {
-        const data = await api.get(Endpoints.channelInfo(uid, ChannelType.person)).json();
-        return ChannelInfoSchema.parse(data);
-      },
-      staleTime: 5 * 60_000,
-    })),
-  });
+  const senderInfoItems = useMemo(
+    () => senderUids.map((uid) => ({ channelId: uid, channelType: ChannelType.person })),
+    [senderUids],
+  );
+  const senderInfoQueries = useChannelInfos(senderInfoItems);
   const senderInfoByUid = useMemo(() => {
     const m = new Map<string, ChannelInfo>();
     senderUids.forEach((uid, i) => {

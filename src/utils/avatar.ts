@@ -183,15 +183,24 @@ export function subscribeAvatarTags(): () => void {
   }
 }
 
+/**
+ * 每个 entrypoint 启动时生成一次的 session tag。
+ * 用户重开 sidepanel = sidepanel.html 重新加载 = 模块顶层重跑 = SESSION_TAG 换新，
+ * 进而所有头像 URL 的 ?v= 都换新，浏览器 disk cache 必然 miss → 拉到最新头像；
+ * 同 session 内 URL 保持稳定，命中内存 cache，不会反复下载。
+ *
+ * 优先级：per-channel tag（主动 bump 写入）若比 SESSION_TAG 新，则用 per-channel；
+ * 否则用 SESSION_TAG。这样：
+ *   - 同 session 内主动 bump 某个 channel（用户改了头像）→ 该 channel 立刻刷新
+ *   - 跨 session 不依赖 storage tag 共享（之前那种共享是 bug 来源：永远命中旧 disk cache）
+ */
+const SESSION_TAG = Date.now().toString();
+
 function getDefaultAvatarTag(channelId: string, channelType: number): string {
   const key = `${channelType}:${channelId}`;
-  const existing = avatarTags.get(key);
-  if (existing) return existing;
-  const tag = Date.now().toString();
-  avatarTags.set(key, tag);
-  tagsDirty = true;
-  scheduleTagsFlush();
-  return tag;
+  const perChannel = avatarTags.get(key);
+  if (perChannel && Number(perChannel) > Number(SESSION_TAG)) return perChannel;
+  return SESSION_TAG;
 }
 
 /** 主动 invalidate 一个头像 tag（用户改了头像、上传新 logo 时调）。 */
@@ -199,30 +208,8 @@ export function bumpAvatarTag(channelId: string, channelType: number): void {
   const key = `${channelType}:${channelId}`;
   const now = Date.now();
   avatarTags.set(key, now.toString());
-  tagBumpTimes.set(key, now);
   tagsDirty = true;
   scheduleTagsFlush();
-}
-
-/** 上次 bump 时间（含被动 / 主动），用于 bumpAvatarTagIfStale 限流。 */
-const tagBumpTimes = new Map<string, number>();
-
-/**
- * 列表场景的「保新鲜」bump：tag 比 maxAgeMs 旧才换新。
- * 用在 sidepanel 重新 mount 时主动让 disk cache 失效，避免群头像（多人拼图）
- * 因为浏览器命中本地缓存而长期看到旧合成图。返回是否实际 bump。
- */
-export function bumpAvatarTagIfStale(
-  channelId: string,
-  channelType: number,
-  maxAgeMs: number,
-): boolean {
-  const key = `${channelType}:${channelId}`;
-  const now = Date.now();
-  const last = tagBumpTimes.get(key) ?? 0;
-  if (now - last < maxAgeMs) return false;
-  bumpAvatarTag(channelId, channelType);
-  return true;
 }
 
 /**

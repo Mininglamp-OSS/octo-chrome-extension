@@ -1,25 +1,13 @@
 import {
-  PersistQueryClientProvider,
   type PersistedClient,
   type Persister,
+  PersistQueryClientProvider,
 } from "@tanstack/react-query-persist-client";
-import { QueryClient } from "@tanstack/react-query";
 import { del, get, set } from "idb-keyval";
 import type * as React from "react";
+import { queryClient } from "@/api/queryClient";
 import { Toaster } from "@/components/ui/toast";
 import { TooltipProvider } from "@/components/ui/tooltip";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 30_000,
-      // gcTime 必须 >= persist 的 maxAge，否则数据 hydrate 进来后立刻被 GC
-      gcTime: 24 * 60 * 60_000,
-      refetchOnWindowFocus: false,
-      retry: 1,
-    },
-  },
-});
 
 const IDB_KEY = "octo-rq-cache" as const;
 

@@ -1,9 +1,8 @@
-import { useQueries } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
-import { api, getApiUrl } from "@/api/client";
-import { Endpoints } from "@/api/endpoints";
+import { useMemo } from "react";
+import { getApiUrl } from "@/api/client";
+import { useChannelInfos } from "@/api/queries/channels";
 import { usePinned } from "@/api/queries/pinned";
-import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { type ChannelInfo, isChannelInfoBot } from "@/api/schemas/channel";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { ChannelType } from "@/const/channel";
 import { useBotUidSet } from "@/hooks/useBotUidSet";
@@ -12,7 +11,6 @@ import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
-import { bumpAvatarTagIfStale } from "@/utils/avatar";
 import { RailAvatar } from "./RailAvatar";
 import { RailHoverCard } from "./RailHoverCard";
 
@@ -48,6 +46,10 @@ function resolveDisplayName(info: ChannelInfo | undefined, fallback: string): st
  *  - 真头像优先，AvatarFallback 走双字符
  *  - 子区右下加 hash 色 # 角标（同群多子区可区分）
  *  - mention 状态叠加角标而非替换主体
+ *
+ * channelInfo 拉新策略统一在 useChannelInfos（staleTime=0 + refetchOnMount=always，
+ * SWR 模式）；头像 URL 的 disk cache 由 SESSION_TAG 在 sidepanel 重启时自动失效，
+ * 所以这里不再需要本地的 bump 限流 hack。
  */
 export function VerticalRail({ onShowPicker }: Props) {
   const { conversations } = useConversationViews();
@@ -60,37 +62,15 @@ export function VerticalRail({ onShowPicker }: Props) {
   const baseURL = getApiUrl();
   const botSet = useBotUidSet();
 
-  // 与 mirror 一致：rail 显示名走 channelInfo.orgData.displayName（remark || name）
-  // 而非 conversation.name。pinned 列表按需为每项拉一次 channelInfo。
-  // staleTime=0 + refetchOnMount=always：每次 sidepanel mount 都后台 refetch，
-  // 让群头像 / 名字 / logo 等改动能反映到 rail（IDB persist 仅作首屏占位，SWR 模式）。
-  const channelInfoQueries = useQueries({
-    queries: (pinnedItems ?? []).map((p) => ({
-      queryKey: ["channel", p.channel_type, p.channel_id],
-      async queryFn(): Promise<ChannelInfo> {
-        const data = await api.get(Endpoints.channelInfo(p.channel_id, p.channel_type)).json();
-        return ChannelInfoSchema.parse(data);
-      },
-      staleTime: 0,
-      refetchOnMount: "always" as const,
-    })),
-  });
-
-  // mount 时给每个 pin 头像 tag 限流式 bump（5 分钟内最多一次），强制 disk cache miss。
-  // 即便 channelInfo.logo 字段不变（path 稳定），群多人拼图等服务端动态合成的图也能
-  // 看到最新版本。bumpAvatarTagIfStale 内部限流，开关 sidepanel 不会真的每次都刷网络。
-  // nonce 仅用来触发 re-render，让 RailAvatar 重新调 resolveAvatarUrl 拿到新 tag。
-  const [, setTagNonce] = useState(0);
-  useEffect(() => {
-    if (!pinnedItems || pinnedItems.length === 0) return;
-    let bumped = false;
-    for (const p of pinnedItems) {
-      if (bumpAvatarTagIfStale(p.channel_id, p.channel_type, 5 * 60_000)) {
-        bumped = true;
-      }
-    }
-    if (bumped) setTagNonce((n) => n + 1);
-  }, [pinnedItems]);
+  const channelInfoItems = useMemo(
+    () =>
+      (pinnedItems ?? []).map((p) => ({
+        channelId: p.channel_id,
+        channelType: p.channel_type,
+      })),
+    [pinnedItems],
+  );
+  const channelInfoQueries = useChannelInfos(channelInfoItems);
 
   const { visible, hiddenCount } = useMemo(() => {
     const convMap = new Map<string, ConversationView>();
@@ -121,8 +101,6 @@ export function VerticalRail({ onShowPicker }: Props) {
       });
     });
     return { visible: list, hiddenCount: Math.max(0, conversations.length - list.length) };
-    // tagNonce 不进 useMemo deps（useMemo 体内未消费）；setTagNonce 已触发整体 re-render，
-    // RailAvatar 内部 resolveAvatarUrl 会在 render 时同步重新取最新 avatarTag。
   }, [conversations, pinnedItems, atMeCounts, channelInfoQueries, botSet]);
 
   if (visible.length === 0 && hiddenCount === 0) return null;

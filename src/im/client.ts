@@ -11,10 +11,13 @@ import WKSDK, {
 import { z } from "zod";
 import { api } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
+import { channelQueryKey } from "@/api/queries/channels";
+import { queryClient } from "@/api/queryClient";
 import { ChannelInfoSchema } from "@/api/schemas/channel";
 import { ReminderListSchema, toReminder } from "@/api/schemas/reminder";
 import { getModuleOrUnknown } from "@/messages/core/registry";
 import { useAuthStore } from "@/stores/auth";
+import { bumpAvatarTag } from "@/utils/avatar";
 import { toSdkMessage } from "./messageConvert";
 import { MediaMessageUploadTask } from "./uploadTask";
 
@@ -68,6 +71,19 @@ async function fetchChannelInfo(channel: Channel): Promise<WKChannelInfo> {
       if (logo) info.logo = logo;
       info.mute = (d.mute ?? 0) === 1;
       info.top = (d.stick ?? d.top ?? 0) === 1;
+
+      // SDK 主动拉到的 channelInfo 也同步给 React Query 缓存 + 头像 tag：
+      //  - useChannelInfo / useChannelInfos 命中同 key 立即拿新值
+      //  - 与本进程内已有缓存对比，若 logo 字段变了就 bump 头像 tag，
+      //    让 ?v= 失效，浏览器 disk cache miss → session 内即时刷新
+      const key = channelQueryKey(channel.channelType, channel.channelID);
+      const prev = queryClient.getQueryData<typeof d>(key);
+      queryClient.setQueryData(key, d);
+      const prevLogo = (prev?.logo ?? prev?.avatar)?.trim();
+      const nextLogo = (d.logo ?? d.avatar)?.trim();
+      if (prev && prevLogo !== nextLogo) {
+        bumpAvatarTag(channel.channelID, channel.channelType);
+      }
     }
   } catch (err) {
     console.debug("[octo:im] channelInfo not found", channel.channelID, channel.channelType, err);
