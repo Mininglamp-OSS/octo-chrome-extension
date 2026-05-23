@@ -11,8 +11,17 @@ interface PanelContext {
 const READY_MSG = "CMDK_READY";
 const CONTEXT_MSG = "CMDK_CONTEXT";
 const DONE_MSG = "CMDK_DONE";
-const PLUGIN_CALL_SOURCE = "octo-plugin-call";
+const PLUGIN_CALL_TYPE = "OCTO_PLUGIN_CALL";
+const PLUGIN_CALL_SUB_SEND = "sendMessage";
 
+/**
+ * cmdk-overlay 不再做未登录拦截 —— 已下沉到 cmdk iframe 内的 CmdkApp。
+ *
+ * 原因：content script 是网页 main world 同帧，按钮 onClick → sendMessage →
+ * background → chrome.sidePanel.open() 链路会丢失 user activation，sidepanel
+ * 不会开。cmdk iframe 是扩展 origin，里面按钮点击的手势能稳定传递到
+ * sidePanel.open，与 mirror 同款方案。
+ */
 export function CmdKOverlay() {
   const [selRect, setSelRect] = useState<DOMRect | null>(null);
   const [selText, setSelText] = useState("");
@@ -91,18 +100,20 @@ export function CmdKOverlay() {
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [openPanel, closePanel, selText, open]);
 
-  // main world 注入脚本 (window.pluginCall) 触发
+  // main world 注入脚本 (window.pluginCall(...)) 触发：
+  // 同源校验：e.source === window && e.origin === location.origin
   useEffect(() => {
     function onMsg(e: MessageEvent): void {
-      const data = (e.data ?? {}) as { source?: string; cmd?: string; text?: string };
-      if (data.source !== PLUGIN_CALL_SOURCE) return;
-      if (data.cmd === "openCmdK") {
-        openPanel(data.text ?? selText);
-      }
+      if (e.source !== window || e.origin !== location.origin) return;
+      const data = (e.data ?? {}) as { type?: string; sub?: string; value?: unknown };
+      if (data.type !== PLUGIN_CALL_TYPE || data.sub !== PLUGIN_CALL_SUB_SEND) return;
+      const value = typeof data.value === "string" ? data.value : "";
+      if (!value) return;
+      openPanel(value);
     }
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
-  }, [openPanel, selText]);
+  }, [openPanel]);
 
   // 与 iframe 内的 CmdkApp 双向通信
   useEffect(() => {

@@ -9,9 +9,14 @@ export function setupHandlers(): void {
     if (tab.windowId != null) await openSidePanel(tab.windowId);
   });
 
-  // 请求打开 sidepanel
-  onMessage("requestOpenSidePanel", async ({ data }) => {
-    await openSidePanel(data?.windowId);
+  // 请求打开 sidepanel —— 必须同步从 sender.tab 拿 windowId 后立刻 fire sp.open()，
+  // 任何 await 在前都会丢失 user gesture（如 await browser.windows.getCurrent()），
+  // 表现为「点按钮没反应」。与 requestOpenConversation 同款保手势模式。
+  onMessage("requestOpenSidePanel", ({ data, sender }) => {
+    const windowId =
+      data?.windowId ??
+      (sender as { tab?: { windowId?: number } } | undefined)?.tab?.windowId;
+    void openSidePanel(windowId).catch(() => {});
   });
 
   // 请求跳转某个会话 —— 优先用 sender.tab.windowId 同步开 sidePanel（保住 user gesture），

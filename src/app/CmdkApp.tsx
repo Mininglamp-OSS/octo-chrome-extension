@@ -7,12 +7,14 @@ import {
   type PickedTarget,
 } from "@/cmdk/CmdkChannelPicker";
 import { CmdkComposer, type CmdkComposerHandle } from "@/cmdk/CmdkComposer";
+import { CmdkLoggedOutNotice } from "@/cmdk/CmdkLoggedOutNotice";
 import { CmdkTopBar } from "@/cmdk/CmdkTopBar";
 import type { PanelContext } from "@/cmdk/buildCmdkMessageText";
 import { isInsidePortal } from "@/cmdk/overlaySelectors";
 import { useDraggable } from "@/cmdk/useDraggable";
 import { ChannelType } from "@/const/channel";
 import { cmdkLastTargetStorage } from "@/platform/storage";
+import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { useSpaceStore } from "@/stores/space";
 import { resolveImageURL, stripSpacePrefix } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
@@ -34,7 +36,43 @@ const PANEL_SHADOW_REST =
 const PANEL_SHADOW_DRAG =
   "0 24px 60px rgba(20, 20, 28, 0.22), 0 8px 24px rgba(20, 20, 28, 0.12), 0 0 0 1px rgba(124, 92, 252, 0.28), 0 0 0 5px rgba(124, 92, 252, 0.08)";
 
+const DONE_PARENT_MSG = DONE_MSG;
+
+/**
+ * CmdkApp 顶层 gate：未登录 → 渲染 CmdkLoggedOutNotice；登录 → 渲染主体 CmdkAppAuthed。
+ *
+ * 未登录拦截放在这里（cmdk iframe 内）而不是 content overlay 浮层，是因为
+ * iframe 是扩展 origin，里面按钮 onClick 的 user gesture 能稳定传递到
+ * background → chrome.sidePanel.open()；content script 里则会丢手势。
+ * 与 mirror apps/extension/entrypoints/cmdk/main.tsx 同款方案。
+ */
 export function CmdkApp() {
+  const isLogined = useAuthStore(selectIsLogined);
+
+  function notifyParentClose(): void {
+    window.parent?.postMessage({ type: DONE_PARENT_MSG }, "*");
+  }
+
+  // Esc 关闭 + 通知 overlay 拆 iframe（无论登录与否都需要）
+  useEffect(() => {
+    if (isLogined) return;
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        notifyParentClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [isLogined]);
+
+  if (!isLogined) {
+    return <CmdkLoggedOutNotice onClose={notifyParentClose} />;
+  }
+  return <CmdkAppAuthed />;
+}
+
+function CmdkAppAuthed() {
   const [ctx, setCtx] = useState<PanelContext>(EMPTY_CTX);
   const [picked, setPicked] = useState<PickedTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
