@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Rail · Thread HoverCard 重设计</title>
+<style>
+:root {
+  --bg-app: #efeff2;
+  --bg-elev: #ffffff;
+  --bg-popover: #ffffff;
+  --fg: #18181b;
+  --fg-soft: #3f3f46;
+  --muted: #f4f4f5;
+  --muted-fg: #71717a;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --primary: #7c5cfc;
+  --primary-soft: rgba(124, 92, 252, 0.12);
+  --primary-mute: rgba(124, 92, 252, 0.06);
+  --thread-hue: #7c5cfc; /* 同 rail 右下 # 角标 hash 出的颜色 */
+  --mention: #f97316;
+  --unread: #f54a45;
+  --shadow-card: 0 1px 2px rgba(20,20,28,0.04), 0 8px 24px rgba(20,20,28,0.06);
+  --shadow-popover: 0 12px 32px rgba(20,20,28,0.16), 0 4px 12px rgba(20,20,28,0.10), 0 0 0 1px rgba(20,20,28,0.04);
+}
+html.dark {
+  --bg-app: #131316;
+  --bg-elev: #18181b;
+  --bg-popover: #1c1c1f;
+  --fg: #fafafa;
+  --fg-soft: #d4d4d8;
+  --muted: #27272a;
+  --muted-fg: #a1a1aa;
+  --border: #2a2a2e;
+  --border-strong: #3f3f46;
+  --primary: #b59eff;
+  --primary-soft: rgba(181, 158, 255, 0.20);
+  --primary-mute: rgba(181, 158, 255, 0.08);
+  --thread-hue: #b59eff;
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-popover: 0 12px 32px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.10) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.08) 0px, transparent 45%),
+    linear-gradient(180deg, #fafafa, var(--bg-app));
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+html.dark body {
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.18) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.10) 0px, transparent 45%),
+    linear-gradient(180deg, #0a0a0a, var(--bg-app));
+}
+
+/* layout */
+.page { max-width: 1200px; margin: 0 auto; padding: 56px 32px 96px; }
+header.hero { margin-bottom: 64px; display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+.hero h1 { font-size: 36px; line-height: 1.1; letter-spacing: -0.025em; font-weight: 700; margin: 0 0 12px; }
+.hero .lede { color: var(--muted-fg); max-width: 58ch; margin: 0; }
+.hero .meta { color: var(--muted-fg); font-size: 12px; margin-top: 14px; }
+.hero .meta b { color: var(--fg-soft); font-weight: 600; }
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--muted-fg); font-size: 12px; cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+.theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); }
+
+section + section { margin-top: 72px; }
+section h2 {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--muted-fg); text-transform: uppercase;
+  margin: 0 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+section h2 + .section-title { font-size: 24px; font-weight: 600; letter-spacing: -0.018em; margin: 0 0 6px; }
+section h2 + .section-title + p { color: var(--muted-fg); margin: 0 0 28px; max-width: 70ch; }
+
+/* === SHARED PRIMITIVES === */
+.face {
+  display: grid; place-items: center; overflow: hidden; flex-shrink: 0;
+  background: linear-gradient(135deg, #facc15, #d97706);
+  color: white; font-weight: 700;
+}
+.face.boss {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%23facc15'/><stop offset='1' stop-color='%23d97706'/></linearGradient></defs><rect width='64' height='64' fill='url(%23g)'/><circle cx='22' cy='28' r='3' fill='%2318181b'/><circle cx='42' cy='28' r='3' fill='%2318181b'/><path d='M20 42 Q32 50 44 42' stroke='%2318181b' stroke-width='2.5' fill='none' stroke-linecap='round'/><path d='M14 22 Q24 8 38 14 Q50 18 50 30' stroke='%23a16207' stroke-width='6' fill='none' stroke-linecap='round'/></svg>");
+  background-size: cover;
+}
+.thread-icon {
+  display: grid; place-items: center;
+  background: var(--thread-hue);
+  color: white;
+  font-weight: 800;
+  position: relative;
+}
+.thread-icon::before {
+  content: ''; position: absolute; inset: 0;
+  background: radial-gradient(circle at 30% 25%, rgba(255,255,255,0.32), transparent 55%);
+  pointer-events: none;
+}
+
+/* === HOVERCARD MOCK === */
+.hc {
+  width: 280px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  position: relative;
+}
+.hc.bad { border-color: rgba(245, 74, 69, 0.4); }
+.hc.recommended { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-popover); }
+
+.hc .row { padding: 12px 14px; }
+.hc .meta-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; font-weight: 600;
+  padding: 2px 7px; border-radius: 4px;
+  background: var(--muted); color: var(--fg-soft);
+  letter-spacing: 0.02em;
+}
+.hc .meta-chip.thread {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+/* ============== BEFORE (current) ============== */
+.hc.before .parent {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--primary-mute);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--muted-fg);
+}
+.hc.before .parent .face { width: 16px; height: 16px; border-radius: 3px; }
+.hc.before .parent .name { color: var(--fg); font-weight: 600; }
+.hc.before .parent .arrow { margin-left: auto; opacity: 0.5; }
+.hc.before .body { padding: 12px 14px; display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: center; }
+.hc.before .body .face { width: 36px; height: 36px; border-radius: 8px; }
+.hc.before .body .name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.hc.before .body .row2 { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+/* ============== A · 抽象 # 色块（替换主头像） ============== */
+.hc.a .parent {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px;
+  background: var(--primary-mute);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--muted-fg);
+}
+.hc.a .parent .face { width: 14px; height: 14px; border-radius: 3px; }
+.hc.a .parent .name { color: var(--fg); font-weight: 600; }
+.hc.a .parent .arrow { margin-left: auto; opacity: 0.5; }
+.hc.a .body { padding: 12px 14px; display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: center; }
+.hc.a .body .thread-icon {
+  width: 36px; height: 36px; border-radius: 8px;
+  font-size: 18px;
+}
+.hc.a .body .name { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.hc.a .body .row2 { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+
+/* ============== B · Breadcrumb 单层（推荐） ============== */
+.hc.b {
+  padding: 14px;
+}
+.hc.b .crumb {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px 3px 4px;
+  background: var(--primary-mute);
+  border: 1px solid var(--primary-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--fg-soft);
+  margin-bottom: 12px;
+  max-width: 100%;
+  min-width: 0;
+}
+.hc.b .crumb .face { width: 14px; height: 14px; border-radius: 999px; }
+.hc.b .crumb .name {
+  font-weight: 600; color: var(--fg);
+  min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hc.b .crumb .arrow { color: var(--muted-fg); flex-shrink: 0; }
+.hc.b .body {
+  display: grid; grid-template-columns: 40px 1fr; gap: 14px; align-items: center;
+}
+.hc.b .body .thread-icon {
+  width: 40px; height: 40px; border-radius: 10px;
+  font-size: 22px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--thread-hue) 35%, transparent);
+}
+.hc.b .body .name {
+  font-size: 16px; font-weight: 700; letter-spacing: -0.012em;
+  line-height: 1.2;
+}
+.hc.b .body .row2 { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+
+/* ============== C · 子区头像 + 父群左上角小章 ============== */
+.hc.c {
+  padding: 14px;
+}
+.hc.c .body {
+  display: grid; grid-template-columns: 44px 1fr; gap: 14px; align-items: center;
+}
+.hc.c .stack {
+  position: relative; width: 44px; height: 44px;
+}
+.hc.c .stack .thread-icon {
+  width: 40px; height: 40px; border-radius: 10px; font-size: 22px;
+  position: absolute; right: 0; bottom: 0;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--thread-hue) 35%, transparent);
+}
+.hc.c .stack .face {
+  position: absolute; left: 0; top: 0;
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 2px solid var(--bg-popover);
+  z-index: 1;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.18);
+}
+.hc.c .body .name { font-size: 16px; font-weight: 700; letter-spacing: -0.012em; line-height: 1.2; }
+.hc.c .body .sub { font-size: 11px; color: var(--muted-fg); margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+.hc.c .body .sub b { color: var(--fg-soft); font-weight: 600; }
+.hc.c .body .row2 { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+
+/* ============== D · 类型导向：去脸，标题居中 ============== */
+.hc.d {
+  padding: 18px 14px 14px;
+  text-align: center;
+  position: relative;
+}
+.hc.d::before {
+  content: '';
+  position: absolute; left: 0; right: 0; top: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, var(--thread-hue), transparent);
+}
+.hc.d .hash {
+  font-size: 30px; font-weight: 800; color: var(--thread-hue);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  line-height: 1; margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+.hc.d .name { font-size: 17px; font-weight: 700; letter-spacing: -0.012em; }
+.hc.d .from {
+  margin-top: 10px;
+  font-size: 11px; color: var(--muted-fg);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  background: var(--muted);
+}
+.hc.d .from .face { width: 14px; height: 14px; border-radius: 3px; }
+.hc.d .from b { color: var(--fg); font-weight: 600; }
+.hc.d .row2 { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 10px; }
+
+/* pills */
+.pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; font-weight: 800;
+  padding: 1px 7px; border-radius: 999px;
+  letter-spacing: 0.02em;
+}
+.pill.unread { background: rgba(245, 74, 69, 0.14); color: var(--unread); }
+.pill.mention { background: rgba(249, 115, 22, 0.16); color: var(--mention); }
+.pill.muted { background: var(--muted); color: var(--muted-fg); }
+
+/* ====== layout grids ====== */
+.compare {
+  display: grid; gap: 28px;
+  grid-template-columns: repeat(2, 1fr);
+  align-items: start;
+}
+.compare > .col h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.compare > .col h3 .tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--muted); color: var(--muted-fg); text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-left: 8px;
+}
+.compare > .col h3 .tag.bad { background: rgba(245, 74, 69, 0.14); color: var(--unread); }
+.compare > .col p.note { font-size: 12px; color: var(--muted-fg); margin: 16px 0 0; line-height: 1.6; }
+.compare > .col p.note b { color: var(--fg); font-weight: 600; }
+.compare > .col .stage {
+  position: relative;
+  background: var(--muted);
+  border-radius: 14px;
+  padding: 28px;
+  display: grid; place-items: center;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+/* annotation overlays on .before */
+.annotation {
+  position: absolute;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--unread);
+  background: var(--bg-popover);
+  border: 1px solid rgba(245, 74, 69, 0.4);
+  padding: 4px 8px; border-radius: 999px;
+  white-space: nowrap;
+}
+.annotation .dot { width: 6px; height: 6px; border-radius: 999px; background: var(--unread); }
+.annotation::after {
+  content: ''; position: absolute;
+  width: 24px; height: 1px;
+  background: var(--unread);
+}
+.ann-1 { top: 38px; left: -8px; }
+.ann-1::after { right: -22px; top: 50%; }
+.ann-2 { bottom: 38px; left: -8px; }
+.ann-2::after { right: -22px; top: 50%; }
+
+/* === 4-way option grid === */
+.options {
+  display: grid; gap: 22px;
+  grid-template-columns: repeat(2, 1fr);
+}
+.options .opt {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 16px; padding: 24px;
+  box-shadow: var(--shadow-card);
+  display: flex; flex-direction: column; gap: 18px;
+}
+.options .opt.recommended {
+  border-color: var(--primary);
+  background: linear-gradient(180deg, var(--bg-elev), var(--primary-mute));
+  box-shadow: 0 0 0 3px var(--primary-soft), var(--shadow-card);
+}
+.options .opt .head { display: flex; align-items: baseline; justify-content: space-between; }
+.options .opt h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.options .opt h3 .letter {
+  display: inline-block; min-width: 22px; height: 22px; line-height: 22px;
+  text-align: center; border-radius: 6px;
+  background: var(--muted); color: var(--fg-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; font-weight: 800; margin-right: 8px;
+}
+.options .opt.recommended h3 .letter { background: var(--primary); color: white; }
+.options .opt .verdict {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 999px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.options .opt .verdict.pick { background: var(--primary); color: white; }
+.options .opt .verdict.ok { background: var(--muted); color: var(--fg-soft); }
+.options .opt .verdict.maybe { background: rgba(234, 179, 8, 0.20); color: rgb(161, 98, 7); }
+html.dark .options .opt .verdict.maybe { background: rgba(234, 179, 8, 0.30); color: rgb(250, 204, 21); }
+.options .opt .stage {
+  background: var(--muted);
+  border-radius: 12px;
+  padding: 24px 18px;
+  display: grid; place-items: center;
+  min-height: 160px;
+}
+.options .opt .pros, .options .opt .cons { font-size: 12px; line-height: 1.55; color: var(--fg-soft); margin: 0; }
+.options .opt .pros::before { content: "+ "; color: rgb(22,163,74); font-weight: 700; }
+.options .opt .cons::before { content: "− "; color: rgb(220,38,38); font-weight: 700; }
+html.dark .options .opt .pros::before { color: rgb(74,222,128); }
+html.dark .options .opt .cons::before { color: rgb(248,113,113); }
+
+/* === states grid === */
+.states {
+  display: grid; gap: 24px;
+  grid-template-columns: repeat(3, 1fr);
+}
+.states .case {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 22px;
+  box-shadow: var(--shadow-card);
+}
+.states .case .label {
+  font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted-fg); letter-spacing: 0.04em;
+  margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.states .case .label .num {
+  background: var(--primary-soft); color: var(--primary);
+  padding: 1px 7px; border-radius: 4px; font-weight: 700;
+}
+.states .case .stage {
+  background: var(--muted); border-radius: 10px;
+  padding: 20px; display: grid; place-items: center;
+  min-height: 130px;
+}
+.states .case .desc { font-size: 12px; color: var(--muted-fg); margin: 14px 0 0; line-height: 1.6; }
+.states .case .desc b { color: var(--fg); font-weight: 600; }
+
+/* === side-by-side scale === */
+.scale {
+  display: grid; gap: 28px;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: start;
+}
+.scale .col {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 22px;
+  box-shadow: var(--shadow-card);
+}
+.scale .col .label {
+  font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted-fg); margin-bottom: 14px; letter-spacing: 0.04em;
+}
+.scale .col .stage {
+  background: var(--muted); border-radius: 10px;
+  padding: 20px; display: grid; place-items: center;
+  min-height: 130px;
+}
+.scale .col .note { font-size: 12px; color: var(--fg-soft); margin: 14px 0 0; line-height: 1.55; }
+
+/* === footnotes === */
+.footnotes {
+  margin-top: 64px; padding: 24px;
+  background: var(--muted);
+  border-radius: 14px; font-size: 12px; color: var(--fg-soft);
+}
+.footnotes h4 { margin: 0 0 12px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.footnotes ol { margin: 0; padding-left: 20px; line-height: 1.8; }
+.footnotes code { background: var(--bg-elev); padding: 1px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+.footnotes b { color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div>
+    <h1>Thread HoverCard · 重设计</h1>
+    <p class="lede">
+      子区的「头像」其实是借父群的头像。当前卡片把<b>同一张脸</b>同时显示在顶部 parent strip（16px）和主体头像位（36px）位置——视觉冗余、抢焦点、用户认知负担。本稿给 4 个去重方案，推荐 <b>Breadcrumb 单层</b>。
+    </p>
+    <p class="meta">
+      <b>容器宽</b> 256–280px · <b>主题色</b> hash(thread.name) · <b>左侧浮出</b> · 纯只读
+    </p>
+  </div>
+  <button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark')">
+    <span>切换暗色 / 亮色</span>
+  </button>
+</header>
+
+<!-- ========================================================== -->
+<section>
+  <h2>01 · 问题诊断</h2>
+  <div class="section-title">当前实现 → 重复脸</div>
+  <p>截图实拍：父群「虾饼鞋匠」的卡通脸出现两次。一张做 16px 父群标识、一张做 36px 主体头像。两张完全相同的图，意义重复，更糟的是<b>抢走了「充值」这个子区名的视觉焦点</b>。</p>
+
+  <div class="compare">
+    <div class="col">
+      <h3>BEFORE（当前线上）<span class="tag bad">问题</span></h3>
+      <div class="stage">
+        <div class="hc before bad">
+          <div class="parent">
+            <div class="face boss"></div>
+            <span>来自</span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="face boss"></div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="annotation ann-1" style="left: calc(50% + 35px); top: 28px;">
+          <span class="dot"></span> 同图 #1 · 16px
+        </div>
+        <div class="annotation ann-2" style="left: calc(50% + 35px); top: 96px;">
+          <span class="dot"></span> 同图 #2 · 36px
+        </div>
+      </div>
+      <p class="note">
+        <b>问题清单：</b>① 两张同图视觉冗余 ② 子区名"充值"字号被压制（14px）③ 头像和子区名同行排版导致主体留白消失 ④ parent strip 占了整整一行高度但只为传一句话
+      </p>
+    </div>
+
+    <div class="col">
+      <h3>设计目标</h3>
+      <div class="stage" style="background: transparent;">
+        <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; align-self: stretch;">
+          <li style="display: flex; gap: 12px; align-items: flex-start;">
+            <span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--primary); background: var(--primary-soft); padding: 2px 7px; border-radius: 4px; font-weight: 700; flex-shrink: 0;">G1</span>
+            <span style="font-size: 13px; color: var(--fg-soft);"><b style="color: var(--fg);">主头像不复用父群图</b> —— 子区有自己的身份，用色块+#符号建立独立视觉</span>
+          </li>
+          <li style="display: flex; gap: 12px; align-items: flex-start;">
+            <span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--primary); background: var(--primary-soft); padding: 2px 7px; border-radius: 4px; font-weight: 700; flex-shrink: 0;">G2</span>
+            <span style="font-size: 13px; color: var(--fg-soft);"><b style="color: var(--fg);">子区名突出</b> —— 字号 ≥ 16px，作为视觉绝对主角</span>
+          </li>
+          <li style="display: flex; gap: 12px; align-items: flex-start;">
+            <span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--primary); background: var(--primary-soft); padding: 2px 7px; border-radius: 4px; font-weight: 700; flex-shrink: 0;">G3</span>
+            <span style="font-size: 13px; color: var(--fg-soft);"><b style="color: var(--fg);">父群退到次要</b> —— 上下文存在，但不能跟子区平起平坐</span>
+          </li>
+          <li style="display: flex; gap: 12px; align-items: flex-start;">
+            <span style="font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--primary); background: var(--primary-soft); padding: 2px 7px; border-radius: 4px; font-weight: 700; flex-shrink: 0;">G4</span>
+            <span style="font-size: 13px; color: var(--fg-soft);"><b style="color: var(--fg);">视觉与 rail 角标连贯</b> —— rail 右下 # 角标的颜色（hash 子区名）延伸到卡片主头像，强化「同色 = 同子区」</span>
+          </li>
+        </ul>
+      </div>
+      <p class="note">
+        关键洞察：<b>子区是个「话题」而不是「群」</b>。话题的图形语言是 #，群的图形语言是头像。当前实现错把子区当群处理。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>02 · 四个方案</h2>
+  <div class="section-title">从最保守到最激进</div>
+  <p>每个方案都解决了「两张同图」核心问题，但密度、层级表达、克制度不同。</p>
+
+  <div class="options">
+
+    <!-- A. # 色块替换 -->
+    <div class="opt">
+      <div class="head">
+        <h3><span class="letter">A</span>抽象 # 色块替换主头像</h3>
+        <span class="verdict ok">保守</span>
+      </div>
+      <div class="stage">
+        <div class="hc a">
+          <div class="parent">
+            <div class="face boss"></div>
+            <span>来自</span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="pros">最小改动：主头像换成 # 色块，结构不变</p>
+      <p class="cons">parent strip 还在占一行；整卡密度跟群聊卡完全相同，没拿出子区的「话题感」</p>
+    </div>
+
+    <!-- B. Breadcrumb 单层 -->
+    <div class="opt recommended">
+      <div class="head">
+        <h3><span class="letter">B</span>Breadcrumb 单层卡</h3>
+        <span class="verdict pick">推荐</span>
+      </div>
+      <div class="stage">
+        <div class="hc b recommended">
+          <div class="crumb">
+            <span class="face boss"></span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="pros">父群压缩成 inline 胶囊（不再独占一行）；主体子区名升到 16px 当主角；主头像 40px 用 hash 主题色 + # 与 rail 角标视觉呼应</p>
+      <p class="cons">需要新增一个 pill 样式</p>
+    </div>
+
+    <!-- C. 角标式 -->
+    <div class="opt">
+      <div class="head">
+        <h3><span class="letter">C</span>子区主头像 + 父群左上小章</h3>
+        <span class="verdict maybe">实验</span>
+      </div>
+      <div class="stage">
+        <div class="hc c">
+          <div class="body">
+            <div class="stack">
+              <span class="face boss"></span>
+              <div class="thread-icon">#</div>
+            </div>
+            <div>
+              <div class="name">充值</div>
+              <div class="sub">隶属 <b>虾饼鞋匠</b></div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="pros">单一头像区，密度最高；像 macOS Dock app 图标 + 角标徽章一样直观</p>
+      <p class="cons">44×44 的层叠头像在 hover 视觉上仍偏重；父群头像太小（22px）反而看不清</p>
+    </div>
+
+    <!-- D. 类型导向 -->
+    <div class="opt">
+      <div class="head">
+        <h3><span class="letter">D</span>话题导向 · 居中大 #</h3>
+        <span class="verdict maybe">激进</span>
+      </div>
+      <div class="stage">
+        <div class="hc d">
+          <div class="hash">#</div>
+          <div class="name">充值</div>
+          <div class="from">
+            <span class="face boss"></span>
+            <span>来自</span>
+            <b>虾饼鞋匠</b>
+          </div>
+        </div>
+      </div>
+      <p class="pros">最强烈的「话题感」；顶部一道渐变色条强化主题色；适合「子区少但都很重要」的场景</p>
+      <p class="cons">居中布局打破了所有其他 hover 卡的左对齐惯例；信息密度低、卡片高；和群聊卡风格断裂</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>03 · 推荐方案 · 多 state</h2>
+  <div class="section-title">B 方案在不同数据下的表现</div>
+  <p>同一个 Breadcrumb 单层结构，根据 unread / mention / muted / 父群缺失等情况微调。</p>
+
+  <div class="states">
+
+    <!-- default -->
+    <div class="case">
+      <div class="label"><span class="num">01</span>default</div>
+      <div class="stage">
+        <div class="hc b">
+          <div class="crumb">
+            <span class="face boss"></span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2"><span class="meta-chip thread">子区</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">基线。父群 + 子区一目了然，不需要解读。</p>
+    </div>
+
+    <!-- unread -->
+    <div class="case">
+      <div class="label"><span class="num">02</span>unread = 5</div>
+      <div class="stage">
+        <div class="hc b">
+          <div class="crumb">
+            <span class="face boss"></span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+                <span class="pill unread">5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">未读数字小 pill 跟在 chip 后面，跟群聊卡一致。</p>
+    </div>
+
+    <!-- mention -->
+    <div class="case">
+      <div class="label"><span class="num">03</span>@ me</div>
+      <div class="stage">
+        <div class="hc b" style="--thread-hue: #F97316;">
+          <div class="crumb">
+            <span class="face boss"></span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+                <span class="pill mention">@ 2</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">@me 时主头像可<b>临时染成橙色</b>呼应紧迫感（可选；保守做法只加 pill）。</p>
+    </div>
+
+    <!-- muted -->
+    <div class="case">
+      <div class="label"><span class="num">04</span>muted + unread</div>
+      <div class="stage">
+        <div class="hc b">
+          <div class="crumb">
+            <span class="face boss"></span>
+            <span class="name">虾饼鞋匠</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon" style="opacity: 0.55;">#</div>
+            <div>
+              <div class="name" style="opacity: 0.7;">充值</div>
+              <div class="row2">
+                <span class="meta-chip thread">子区</span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--muted-fg);"><path d="M2 2l20 20"/><path d="M18.63 13A17.89 17.89 0 0 1 18 8"/><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"/><path d="M18 8a6 6 0 0 0-9.33-5"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                <span class="pill muted">42</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">静音群：# 色块和 name 整体降透明；未读 pill 走灰色；铃铛斜杠图标取代 chip 后位置。</p>
+    </div>
+
+    <!-- parent missing -->
+    <div class="case">
+      <div class="label"><span class="num">05</span>父群名加载中</div>
+      <div class="stage">
+        <div class="hc b">
+          <div class="crumb" style="background: var(--muted); border-color: var(--border);">
+            <span class="face" style="background: linear-gradient(135deg, var(--muted), var(--border)); width: 14px; height: 14px; border-radius: 999px;"></span>
+            <span class="name" style="background: linear-gradient(90deg, var(--muted-fg) 0%, var(--border) 50%, var(--muted-fg) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; min-width: 60px; height: 11px; border-radius: 3px; opacity: 0.6;">加载中…</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div>
+              <div class="name">充值</div>
+              <div class="row2"><span class="meta-chip thread">子区</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">TanStack Query 父群 info 还在 fetch 时显示骨架文案，避免闪烁；fetch 完成后无缝替换为真名。</p>
+    </div>
+
+    <!-- long name -->
+    <div class="case">
+      <div class="label"><span class="num">06</span>超长名 + 长父群名</div>
+      <div class="stage">
+        <div class="hc b">
+          <div class="crumb" style="max-width: 100%;">
+            <span class="face boss"></span>
+            <span class="name">2026 春季 OKR 跟进总群</span>
+            <span class="arrow">›</span>
+          </div>
+          <div class="body">
+            <div class="thread-icon">#</div>
+            <div style="min-width: 0;">
+              <div class="name" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">设计组对齐 — 周会准备 + 评审反馈跟进</div>
+              <div class="row2"><span class="meta-chip thread">子区</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">crumb 和 name 各自单行截断，<b>native title 兜底完整文本</b>。父群名优先级低于子区名，截断更激进。</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>04 · 与 Rail 的颜色呼应</h2>
+  <div class="section-title">rail 角标色 → 卡片主头像色</div>
+  <p>用户在 rail 上看到的子区右下角 # 角标颜色（hash 子区名），在 hover 卡里被放大成主头像背景色。同一子区 rail 和 hover 视觉绑定。</p>
+
+  <div class="scale">
+
+    <div class="col">
+      <div class="label">Rail · 32×32（实际尺寸）</div>
+      <div class="stage" style="background: var(--muted);">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+          <div style="display: flex; gap: 18px; align-items: center;">
+            <div style="position: relative;">
+              <div class="face boss" style="width: 32px; height: 32px; border-radius: 7px;"></div>
+              <span style="position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 999px; background: #7c5cfc; color: white; font-size: 9px; font-weight: 800; display: grid; place-items: center; border: 1.5px solid var(--muted);">#</span>
+            </div>
+            <div style="position: relative;">
+              <div class="face boss" style="width: 32px; height: 32px; border-radius: 7px;"></div>
+              <span style="position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 999px; background: #5FB05F; color: white; font-size: 9px; font-weight: 800; display: grid; place-items: center; border: 1.5px solid var(--muted);">#</span>
+            </div>
+            <div style="position: relative;">
+              <div class="face boss" style="width: 32px; height: 32px; border-radius: 7px;"></div>
+              <span style="position: absolute; right: -3px; bottom: -3px; width: 14px; height: 14px; border-radius: 999px; background: #C8697D; color: white; font-size: 9px; font-weight: 800; display: grid; place-items: center; border: 1.5px solid var(--muted);">#</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">同父群下 3 个子区 → 父群头像同，<b>角标颜色各异</b>。</p>
+    </div>
+
+    <div class="col">
+      <div class="label">Hover · 卡片主头像（B 方案）</div>
+      <div class="stage" style="background: var(--muted);">
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="thread-icon" style="--thread-hue: #7c5cfc; width: 28px; height: 28px; border-radius: 7px; font-size: 16px;">#</div>
+            <span style="font-size: 13px; font-weight: 600;">充值</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="thread-icon" style="--thread-hue: #5FB05F; width: 28px; height: 28px; border-radius: 7px; font-size: 16px;">#</div>
+            <span style="font-size: 13px; font-weight: 600;">售后</span>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <div class="thread-icon" style="--thread-hue: #C8697D; width: 28px; height: 28px; border-radius: 7px; font-size: 16px;">#</div>
+            <span style="font-size: 13px; font-weight: 600;">投诉</span>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>同色 = 同子区</b>。用户从 rail 角标颜色就能预判 hover 卡的主色。</p>
+    </div>
+
+    <div class="col">
+      <div class="label">用色实现</div>
+      <div class="stage" style="background: var(--muted); padding: 16px;">
+        <pre style="margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; line-height: 1.7; color: var(--fg-soft); white-space: pre-wrap;">// 同源
+const hue = getThreadHueColor(thread.name);
+
+// Rail 角标
+&lt;span style={{ background: hue }}&gt;#&lt;/span&gt;
+
+// HoverCard 主头像
+&lt;div style={{ '--thread-hue': hue }}
+     className="thread-icon"&gt;#&lt;/div&gt;</pre>
+      </div>
+      <p class="note">CSS 变量传一次，rail 和 hover 卡共用 <code style="background: var(--bg-elev); padding: 1px 5px; border-radius: 3px; border: 1px solid var(--border); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;">getThreadHueColor()</code>。</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>05 · 实施清单</h2>
+  <div class="footnotes">
+    <h4>改动锚点（B 方案）</h4>
+    <ol>
+      <li><b>P0-1</b> · <code>src/components/octo/RailHoverCard.tsx</code>：把当前的 parent-strip + grid head 重构成 「crumb + body」 两段式。</li>
+      <li><b>P0-2</b> · 子区分支单独走一套布局；私聊/群聊保持现状不变。用 <code>isThread</code> 切。</li>
+      <li><b>P0-3</b> · 主头像用 <code>getThreadHueColor(name)</code> 作为背景色，居中 # 符号；font-size 22px，icon 容器 40×40。</li>
+      <li><b>P0-4</b> · Crumb 用 inline-flex pill 样式，<code>bg-primary/8</code> 背景、<code>border-primary/12</code> 描边、<code>rounded-full</code>。<b>不再独占整行</b>。</li>
+      <li><b>P1-1</b> · 子区名升级到 16px / font-weight 700，比群聊卡的 14px 更突出（话题感）。</li>
+      <li><b>P1-2</b> · @me 时让 <code>--thread-hue</code> 临时变 <code>#F97316</code>（可选；先做保守版只加 pill）。</li>
+      <li><b>P2</b> · 父群头像加载失败 fallback 到 <code>getInitials(parentName, 1)</code>+<code>getTitleColor</code> 色块。</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

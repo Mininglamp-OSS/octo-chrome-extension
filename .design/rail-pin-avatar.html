@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>VerticalRail · pin 头像设计探索</title>
+<style>
+:root {
+  --bg-app: #efeff2;
+  --bg-elev: #ffffff;
+  --fg: #18181b;
+  --fg-soft: #3f3f46;
+  --muted: #f4f4f5;
+  --muted-fg: #71717a;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --primary: #7c5cfc;
+  --primary-soft: rgba(124, 92, 252, 0.12);
+  --mention: #f97316;
+  --unread: #f54a45;
+  --shadow-card: 0 1px 2px rgba(20,20,28,0.04), 0 8px 24px rgba(20,20,28,0.06);
+}
+html.dark {
+  --bg-app: #131316;
+  --bg-elev: #18181b;
+  --fg: #fafafa;
+  --fg-soft: #d4d4d8;
+  --muted: #27272a;
+  --muted-fg: #a1a1aa;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --primary: #b59eff;
+  --primary-soft: rgba(181, 158, 255, 0.16);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.10) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.08) 0px, transparent 45%),
+    linear-gradient(180deg, #fafafa, var(--bg-app));
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+html.dark body {
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.18) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.10) 0px, transparent 45%),
+    linear-gradient(180deg, #0a0a0a, var(--bg-app));
+}
+.mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace; }
+
+/* layout */
+.page { max-width: 1200px; margin: 0 auto; padding: 56px 32px 96px; }
+header.hero { margin-bottom: 56px; display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+.hero h1 {
+  font-size: 36px; line-height: 1.1; letter-spacing: -0.025em; font-weight: 700;
+  margin: 0 0 12px;
+}
+.hero .lede { color: var(--muted-fg); max-width: 56ch; margin: 0; }
+.hero .meta { color: var(--muted-fg); font-size: 12px; margin-top: 14px; }
+.hero .meta b { color: var(--fg-soft); font-weight: 600; }
+
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--muted-fg); font-size: 12px; cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+.theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); }
+
+section + section { margin-top: 64px; }
+section h2 {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--muted-fg); text-transform: uppercase;
+  margin: 0 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+section h2 + .section-title {
+  font-size: 24px; font-weight: 600; letter-spacing: -0.018em;
+  margin: 0 0 6px;
+}
+section h2 + .section-title + p {
+  color: var(--muted-fg); margin: 0 0 28px; max-width: 70ch;
+}
+
+/* card */
+.card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+/* matrix grid */
+.matrix {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+.matrix .card { padding: 18px 18px 14px; display: flex; flex-direction: column; gap: 12px; min-height: 152px; }
+.matrix .label { font-size: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted-fg); letter-spacing: 0.04em; }
+.matrix .stage { flex: 1; display: grid; place-items: center; min-height: 64px; }
+.matrix .desc { font-size: 12px; color: var(--fg-soft); line-height: 1.5; }
+.matrix .desc b { color: var(--fg); font-weight: 600; }
+.matrix .verdict {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 2px 8px; border-radius: 999px; text-transform: uppercase;
+  width: fit-content;
+}
+.verdict.good { background: rgba(34, 197, 94, 0.12); color: rgb(22, 163, 74); }
+.verdict.warn { background: rgba(234, 179, 8, 0.16); color: rgb(161, 98, 7); }
+.verdict.bad  { background: rgba(245, 74, 69, 0.12); color: rgb(220, 38, 38); }
+html.dark .verdict.good { background: rgba(34, 197, 94, 0.18); color: rgb(74, 222, 128); }
+html.dark .verdict.warn { background: rgba(234, 179, 8, 0.22); color: rgb(250, 204, 21); }
+html.dark .verdict.bad  { background: rgba(245, 74, 69, 0.18); color: rgb(248, 113, 113); }
+
+/* === RAIL ITEM PRIMITIVES === */
+/* 模拟实际 rail 大小 32px (h-8 w-8) */
+.rail-item {
+  position: relative;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  font-weight: 600; color: white;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+}
+.rail-item.private { border-radius: 999px; width: 26px; height: 26px; }
+.rail-item .text-1 { font-size: 15px; line-height: 1; letter-spacing: -0.02em; }
+.rail-item .text-2 { font-size: 11px; line-height: 1; letter-spacing: -0.04em; font-weight: 700; }
+.rail-item.private .text-1 { font-size: 13px; }
+.rail-item.private .text-2 { font-size: 10px; font-weight: 700; }
+.rail-item img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+
+/* gradient swatches – stable hash colors used in real product */
+.gradient-1 { background: linear-gradient(135deg, #B45741, #8E3A28); }
+.gradient-2 { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
+.gradient-3 { background: linear-gradient(135deg, #8B5CF6, #6D28D9); }
+.gradient-4 { background: linear-gradient(135deg, #B91C1C, #7F1D1D); }
+.gradient-5 { background: linear-gradient(135deg, #059669, #065F46); }
+.gradient-6 { background: linear-gradient(135deg, #D97706, #B45309); }
+
+/* nine-grid avatar synthesis for groups w/o uploaded avatar */
+.nine-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  background: rgba(255,255,255,0.4);
+  overflow: hidden;
+}
+.nine-grid > * {
+  background: var(--c, #888); display: grid; place-items: center;
+  font-size: 7px; color: white; font-weight: 600;
+}
+.nine-grid.three > :nth-child(3) { grid-column: span 2; }
+
+/* badges */
+.badge-unread {
+  position: absolute; right: -2px; top: -2px;
+  width: 10px; height: 10px; border-radius: 999px;
+  background: var(--unread); border: 1.5px solid var(--bg-elev);
+  box-shadow: 0 0 0 0.5px rgba(245,74,69,0.4);
+}
+.badge-mention {
+  position: absolute; right: -4px; top: -4px;
+  height: 14px; min-width: 14px; padding: 0 3px;
+  border-radius: 999px; background: var(--mention); color: white;
+  font-size: 9px; font-weight: 800; line-height: 14px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--bg-elev);
+  box-shadow: 0 1px 3px rgba(249,115,22,0.4);
+}
+.badge-thread-corner {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 14px; height: 14px; border-radius: 999px;
+  background: var(--bg-elev); border: 1.5px solid var(--bg-elev);
+  display: grid; place-items: center;
+  font-size: 9px; font-weight: 800; color: white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.badge-thread-corner > span {
+  width: 100%; height: 100%; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--c, var(--primary));
+}
+.ring-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+.muted .text-1, .muted .text-2 { opacity: 0.55; }
+.muted img { opacity: 0.55; }
+
+/* rail demo column */
+.rail-demo-wrap {
+  display: grid; grid-template-columns: 64px 1fr; gap: 24px; align-items: stretch;
+}
+.rail-col {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-height: 480px;
+}
+.rail-col .more-pill {
+  margin-top: 6px;
+  height: 22px; min-width: 32px; padding: 0 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  font-size: 10px; font-weight: 600;
+  color: var(--muted-fg);
+  display: grid; place-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.rail-annotations {
+  display: flex; flex-direction: column; gap: 12px;
+  padding: 4px 0;
+}
+.rail-annotations .row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 12px; border-radius: 10px;
+  background: var(--muted);
+}
+.rail-annotations .row .swatch { width: 32px; display: grid; place-items: center; flex-shrink: 0; }
+.rail-annotations .row .copy { flex: 1; }
+.rail-annotations .row .copy strong { display: block; font-size: 13px; }
+.rail-annotations .row .copy span { color: var(--muted-fg); font-size: 12px; }
+
+/* tabs / decision tree */
+.tree {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+.tree .col {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px;
+}
+.tree .col h3 {
+  margin: 0 0 4px; font-size: 14px; font-weight: 600;
+  display: flex; align-items: center; gap: 8px;
+}
+.tree .col h3 .dot { width: 8px; height: 8px; border-radius: 999px; }
+.tree .col p { color: var(--muted-fg); font-size: 12px; margin: 0 0 14px; }
+.tree .col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.tree .col li {
+  display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center;
+}
+.tree .col li .stage { display: grid; place-items: center; }
+.tree .col li .text { font-size: 12px; }
+.tree .col li .text strong { display: block; font-size: 12px; }
+.tree .col li .text span { color: var(--muted-fg); font-size: 11px; }
+
+/* table-ish */
+.thread-cmp {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+.thread-cmp .card { padding: 18px; display: flex; flex-direction: column; gap: 14px; min-height: 280px; }
+.thread-cmp .card .head { display: flex; justify-content: space-between; align-items: flex-start; }
+.thread-cmp .card .head h4 { margin: 0; font-size: 14px; font-weight: 600; }
+.thread-cmp .card .head .tag {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: 999px;
+  background: var(--muted); color: var(--muted-fg); text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.thread-cmp .stage-row {
+  display: flex; gap: 14px; padding: 12px 0;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  align-items: center; justify-content: center;
+}
+.thread-cmp .pros, .thread-cmp .cons { font-size: 12px; line-height: 1.5; }
+.thread-cmp .pros::before { content: "+ 优"; color: rgb(22,163,74); font-weight: 600; margin-right: 6px; font-size: 11px; }
+.thread-cmp .cons::before { content: "- 劣"; color: rgb(220,38,38); font-weight: 600; margin-right: 6px; font-size: 11px; }
+html.dark .thread-cmp .pros::before { color: rgb(74,222,128); }
+html.dark .thread-cmp .cons::before { color: rgb(248,113,113); }
+
+/* recommended box */
+.recommend {
+  margin-top: 24px;
+  padding: 22px 24px;
+  background: linear-gradient(135deg, rgba(124,92,252,0.08), rgba(0,212,170,0.06));
+  border: 1px solid var(--primary);
+  border-radius: 14px;
+  display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: center;
+}
+.recommend .pin {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--primary); text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0 0 6px;
+}
+.recommend h3 { margin: 0 0 6px; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+.recommend p { margin: 0; color: var(--fg-soft); font-size: 13px; max-width: 64ch; }
+.recommend .preview {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 18px 24px;
+  background: var(--bg-elev);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.recommend .preview .name { font-size: 11px; color: var(--muted-fg); }
+
+/* states */
+.states-grid {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+}
+.states-grid .card { padding: 16px 12px 12px; display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 110px; }
+.states-grid .label { font-size: 11px; color: var(--muted-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* footnotes */
+.footnotes {
+  margin-top: 64px; padding: 24px;
+  background: var(--muted);
+  border-radius: 14px; font-size: 12px; color: var(--fg-soft);
+}
+.footnotes h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.footnotes ol { margin: 0; padding-left: 20px; line-height: 1.7; }
+.footnotes code { background: var(--bg-elev); padding: 1px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div>
+    <h1>Rail Pin · 头像层级设计</h1>
+    <p class="lede">
+      32×32 容器内表达「会话身份 + 类型 + 状态」三层信息，且要在 +83 个 pin 群里仍然一眼可识别。本稿对比业界做法、给出最佳实践、并就「子区无独立头像」给出可落地方案。
+    </p>
+    <p class="meta">
+      <b>容器</b> 32×32 圆角 8px（私聊 26×26 圆形） · <b>真头像优先</b> · <b>fallback 不止步首字符</b>
+    </p>
+  </div>
+  <button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark')">
+    <span>切换暗色 / 亮色</span>
+  </button>
+</header>
+
+<!-- ========================================================== -->
+<section>
+  <h2>01 · Decision Tree</h2>
+  <div class="section-title">头像优先级：真图 → 自动合成 → 字符 fallback</div>
+  <p>同一个会话类型，根据数据完整度走不同分支。<b>仅 5% 不到的 pin 项会真正落到字符 fallback</b>，因此 fallback 美学本身不是主战场——但子区是个例外。</p>
+  <div class="tree">
+    <!-- 私聊 -->
+    <div class="col">
+      <h3><span class="dot" style="background:#3B82F6"></span>私聊 Person</h3>
+      <p>用户头像 100% 存在（注册时强制），无 fallback 路径。</p>
+      <ul>
+        <li>
+          <div class="stage"><div class="rail-item private"><img src="https://i.pravatar.cc/64?img=14" alt=""></div></div>
+          <div class="text"><strong>真头像</strong><span>圆形，26px 比群聊小 6px 视觉减压</span></div>
+        </li>
+        <li>
+          <div class="stage"><div class="rail-item private gradient-1"><span class="text-1">沈</span></div></div>
+          <div class="text"><strong>极端 fallback</strong><span>用户主动删头像，姓氏单字</span></div>
+        </li>
+      </ul>
+    </div>
+    <!-- 群聊 -->
+    <div class="col">
+      <h3><span class="dot" style="background:#8B5CF6"></span>群聊 Group</h3>
+      <p>用户上传 → 后端自动九宫格合成 → 文字。</p>
+      <ul>
+        <li>
+          <div class="stage"><div class="rail-item"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt=""></div></div>
+          <div class="text"><strong>用户上传</strong><span>圆角方 8px，最高优先</span></div>
+        </li>
+        <li>
+          <div class="stage">
+            <div class="rail-item nine-grid">
+              <div style="--c:#B45741;">小</div><div style="--c:#3B82F6;">林</div>
+              <div style="--c:#059669;">吴</div><div style="--c:#D97706;">沈</div>
+            </div>
+          </div>
+          <div class="text"><strong>九宫格合成</strong><span>后端自动用前 4 个成员头像</span></div>
+        </li>
+        <li>
+          <div class="stage"><div class="rail-item gradient-2"><span class="text-2">奔跑</span></div></div>
+          <div class="text"><strong>2 字 fallback</strong><span>极少数纯新群</span></div>
+        </li>
+      </ul>
+    </div>
+    <!-- 子区 -->
+    <div class="col" style="border-color: var(--primary); background: linear-gradient(180deg, var(--bg-elev), var(--primary-soft));">
+      <h3><span class="dot" style="background: var(--primary)"></span>子区 Thread <span class="mono" style="font-size:10px;color:var(--primary);margin-left:auto;">⚑ 难点</span></h3>
+      <p>本身没有头像字段，必须借父群+二次区分。</p>
+      <ul>
+        <li>
+          <div class="stage">
+            <div class="rail-item">
+              <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+              <span class="badge-thread-corner" style="--c:#7c5cfc;"><span>#</span></span>
+            </div>
+          </div>
+          <div class="text"><strong>父群头像 + 子区色#</strong><span>同群多子区靠右下色点区分</span></div>
+        </li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>02 · Fallback 字符策略</h2>
+  <div class="section-title">为什么单字符注定不够用</div>
+  <p>取首字符（汉字 1 字、英文 1 字母）是最常见的实现，但在中文 IM 高密度场景下辨识度最差。下面是三种策略实测对比。</p>
+
+  <div class="matrix">
+    <div class="card">
+      <div class="label">A · 单字符（当前实现）</div>
+      <div class="stage">
+        <div style="display:flex;gap:6px;">
+          <div class="rail-item gradient-1"><span class="text-1">都</span></div>
+          <div class="rail-item gradient-1"><span class="text-1">都</span></div>
+          <div class="rail-item gradient-1"><span class="text-1">都</span></div>
+        </div>
+      </div>
+      <div class="desc">「都市青年」「都江堰群」「都灵之夜」<b>同首字 + hash 同色 = 完全无法区分</b>。</div>
+      <span class="verdict bad">放弃</span>
+    </div>
+
+    <div class="card">
+      <div class="label">B · 双字符（推荐）</div>
+      <div class="stage">
+        <div style="display:flex;gap:6px;">
+          <div class="rail-item gradient-1"><span class="text-2">都市</span></div>
+          <div class="rail-item gradient-2"><span class="text-2">都江</span></div>
+          <div class="rail-item gradient-3"><span class="text-2">都灵</span></div>
+        </div>
+      </div>
+      <div class="desc">取前 2 字，hash 用<b>整名</b>而非首字 → 颜色和文字双维度区分。中文 11px / 英文 13px 在 32px 容器仍清晰。</div>
+      <span class="verdict good">采用</span>
+    </div>
+
+    <div class="card">
+      <div class="label">C · Smart 截取</div>
+      <div class="stage">
+        <div style="display:flex;gap:6px;">
+          <div class="rail-item gradient-4"><span class="text-2">PR</span></div>
+          <div class="rail-item gradient-5"><span class="text-2">DS</span></div>
+          <div class="rail-item gradient-6"><span class="text-2">QA</span></div>
+        </div>
+      </div>
+      <div class="desc">英文/缩写场景：<b>「Product Review」→ PR</b>，去标点取词首字母。中文不适用，仅作为英文兜底。</div>
+      <span class="verdict good">采用</span>
+    </div>
+
+    <div class="card">
+      <div class="label">D · Emoji 用户自选（P2）</div>
+      <div class="stage">
+        <div style="display:flex;gap:6px;">
+          <div class="rail-item" style="background:#FFEDD5;font-size:18px;">🔥</div>
+          <div class="rail-item" style="background:#DBEAFE;font-size:18px;">🚀</div>
+          <div class="rail-item" style="background:#FCE7F3;font-size:18px;">🎯</div>
+        </div>
+      </div>
+      <div class="desc">最高优先级覆盖一切。Linear/Notion 都支持，<b>对高频 pin 项是辨识度终极方案</b>。</div>
+      <span class="verdict warn">远期</span>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>03 · Thread / 子区方案对比</h2>
+  <div class="section-title">借父群头像，但要解决「同群多子区视觉雷同」</div>
+  <p>这是本设计稿的核心。子区无独立头像字段，必须从父群派生，但又要在 rail 上区分同一个父群下的多个 pin 子区。</p>
+
+  <div class="thread-cmp">
+    <!-- A: 父群+灰#角标 -->
+    <div class="card">
+      <div class="head">
+        <h4>A. 父群头像 + 灰 # 角标</h4>
+        <span class="tag">Baseline</span>
+      </div>
+      <div class="stage-row">
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#71717a;"><span>#</span></span>
+        </div>
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#71717a;"><span>#</span></span>
+        </div>
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#71717a;"><span>#</span></span>
+        </div>
+      </div>
+      <p class="pros">类型语义清晰 / 实现最简单 / 与父群关联强</p>
+      <p class="cons">同群多子区<b>完全无法区分</b>，全靠 tooltip</p>
+    </div>
+
+    <!-- B: 父群+色#角标 (推荐) -->
+    <div class="card" style="border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);">
+      <div class="head">
+        <h4>B. 父群头像 + 色 # 角标</h4>
+        <span class="tag" style="background: var(--primary); color: white;">推荐</span>
+      </div>
+      <div class="stage-row">
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#7c5cfc;"><span>#</span></span>
+        </div>
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#059669;"><span>#</span></span>
+        </div>
+        <div class="rail-item">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+          <span class="badge-thread-corner" style="--c:#F97316;"><span>#</span></span>
+        </div>
+      </div>
+      <p class="pros">一个角标解决「类型 + 区分」两件事；色板 hash 子区名稳定</p>
+      <p class="cons">14px 角标颜色对比稍弱，需要白色描边强化</p>
+    </div>
+
+    <!-- C: 文字覆盖 -->
+    <div class="card">
+      <div class="head">
+        <h4>C. 父群头像 + 文字胶囊</h4>
+        <span class="tag">高密度</span>
+      </div>
+      <div class="stage-row">
+        <div class="rail-item" style="overflow:visible;">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="" style="filter: brightness(0.7);">
+          <span style="position:absolute;inset:auto 0 0 0;height:13px;background:rgba(0,0,0,0.78);color:#fff;font-size:8.5px;font-weight:700;letter-spacing:-0.04em;display:grid;place-items:center;border-radius:0 0 7px 7px;">PR周会</span>
+        </div>
+        <div class="rail-item" style="overflow:visible;">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="" style="filter: brightness(0.7);">
+          <span style="position:absolute;inset:auto 0 0 0;height:13px;background:rgba(0,0,0,0.78);color:#fff;font-size:8.5px;font-weight:700;letter-spacing:-0.04em;display:grid;place-items:center;border-radius:0 0 7px 7px;">需求</span>
+        </div>
+        <div class="rail-item" style="overflow:visible;">
+          <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="" style="filter: brightness(0.7);">
+          <span style="position:absolute;inset:auto 0 0 0;height:13px;background:rgba(0,0,0,0.78);color:#fff;font-size:8.5px;font-weight:700;letter-spacing:-0.04em;display:grid;place-items:center;border-radius:0 0 7px 7px;">技术</span>
+        </div>
+      </div>
+      <p class="pros">辨识度最高，子区名直接可读</p>
+      <p class="cons">8.5px 字号极限，遮住头像下半部，<b>视觉杂</b></p>
+    </div>
+
+    <!-- D: 上下分屏 -->
+    <div class="card">
+      <div class="head">
+        <h4>D. 上下分屏</h4>
+        <span class="tag">实验</span>
+      </div>
+      <div class="stage-row">
+        <div class="rail-item" style="overflow:hidden;">
+          <div style="position:absolute;inset:0 0 60% 0;"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="" style="width:100%;height:100%;object-fit:cover;"></div>
+          <div style="position:absolute;inset:40% 0 0 0;background:linear-gradient(135deg, #7c5cfc, #5b7bff);display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;letter-spacing:-0.04em;">PR</div>
+        </div>
+        <div class="rail-item" style="overflow:hidden;">
+          <div style="position:absolute;inset:0 0 60% 0;"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="" style="width:100%;height:100%;object-fit:cover;"></div>
+          <div style="position:absolute;inset:40% 0 0 0;background:linear-gradient(135deg, #059669, #047857);display:grid;place-items:center;font-size:10px;font-weight:700;color:#fff;letter-spacing:-0.04em;">需求</div>
+        </div>
+      </div>
+      <p class="pros">明确表达「父→子」层级</p>
+      <p class="cons">头像被腰斩 → 父群辨识度受损；与群聊视觉差异过大</p>
+    </div>
+  </div>
+
+  <div class="recommend">
+    <div class="preview">
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-thread-corner" style="--c:#7c5cfc;"><span>#</span></span>
+      </div>
+      <span class="name">「研发 / PR 周会」</span>
+    </div>
+    <div>
+      <div class="pin">最佳实践</div>
+      <h3>方案 B · 父群头像 + Hash 色 # 角标</h3>
+      <p>
+        14px 圆形角标，背景色 = <code class="mono">hash(thread.name)</code>。一个元素同时承载两层语义：
+        <b>「我是子区」</b>（# 符号 + 圆形与父群方形不同）+ <b>「我是哪个子区」</b>（颜色稳定区分同群兄弟）。
+        悬停 tooltip 补全文字信息，避免在 32px 容器内塞文字。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>04 · 状态系统</h2>
+  <div class="section-title">未读 / @ / 当前 / 免打扰 — 装饰主体而非替换主体</div>
+  <p>当前实现把 mention 状态直接<b>替换</b>整个 item 为橙色 @ 方块（VerticalRail.tsx:115-126），切回时用户需要重新认头像，违反辨识连续性。下面所有状态均叠加在头像之上。</p>
+
+  <div class="states-grid">
+    <div class="card">
+      <div class="rail-item"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt=""></div>
+      <span class="label">default</span>
+    </div>
+    <div class="card">
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-unread"></span>
+      </div>
+      <span class="label">unread</span>
+    </div>
+    <div class="card">
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-mention">@</span>
+      </div>
+      <span class="label">@me</span>
+    </div>
+    <div class="card">
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-mention">3</span>
+      </div>
+      <span class="label">@me · count</span>
+    </div>
+    <div class="card">
+      <div class="rail-item ring-active"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt=""></div>
+      <span class="label">active</span>
+    </div>
+    <div class="card">
+      <div class="rail-item muted">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-unread" style="background: var(--muted-fg);"></span>
+      </div>
+      <span class="label">muted + unread</span>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>05 · 完整 Rail 演示</h2>
+  <div class="section-title">所有元素混合在一起的真实场景</div>
+  <p>左侧是 64px 宽 rail 容器，10 个 pin item 涵盖私聊 / 群聊 / 子区 / 各种状态。右侧标注每行的设计意图。</p>
+
+  <div class="rail-demo-wrap">
+    <div class="rail-col">
+      <!-- 1. 私聊 真头像 + active -->
+      <div class="rail-item private ring-active"><img src="https://i.pravatar.cc/64?img=14" alt=""></div>
+      <!-- 2. 私聊 fallback -->
+      <div class="rail-item private gradient-1"><span class="text-1">沈</span></div>
+      <!-- 3. 群聊 用户上传 + unread -->
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-unread"></span>
+      </div>
+      <!-- 4. 群聊 九宫格合成 + @me -->
+      <div class="rail-item nine-grid">
+        <div style="--c:#B45741;">小</div><div style="--c:#3B82F6;">林</div>
+        <div style="--c:#059669;">吴</div><div style="--c:#D97706;">沈</div>
+        <span class="badge-mention">@</span>
+      </div>
+      <!-- 5. 群聊 fallback 双字符 -->
+      <div class="rail-item gradient-3"><span class="text-2">奔跑</span></div>
+      <!-- 6. 子区 父群头像 + 紫色 # -->
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-thread-corner" style="--c:#7c5cfc;"><span>#</span></span>
+      </div>
+      <!-- 7. 子区 同一父群 + 不同色 # + unread -->
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-thread-corner" style="--c:#059669;"><span>#</span></span>
+        <span class="badge-unread"></span>
+      </div>
+      <!-- 8. 子区 同父群 + 第三色 -->
+      <div class="rail-item">
+        <img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt="">
+        <span class="badge-thread-corner" style="--c:#F97316;"><span>#</span></span>
+      </div>
+      <!-- 9. emoji 自选 -->
+      <div class="rail-item" style="background:#FFEDD5;font-size:18px;">🔥</div>
+      <!-- 10. muted -->
+      <div class="rail-item muted gradient-4"><span class="text-2">老群</span></div>
+
+      <div class="more-pill">+76</div>
+    </div>
+
+    <div class="rail-annotations">
+      <div class="row"><div class="swatch"><div class="rail-item private ring-active" style="transform: scale(0.85);"><img src="https://i.pravatar.cc/64?img=14" alt=""></div></div><div class="copy"><strong>1 · 私聊 · 当前选中</strong><span>圆形 26px · 真头像 · ring-2 主色 · 不替换主体</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item private gradient-1" style="transform: scale(0.85);"><span class="text-1">沈</span></div></div><div class="copy"><strong>2 · 私聊 · 极端 fallback</strong><span>用户主动删头像才会到，姓氏单字</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item" style="transform: scale(0.85);"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt=""><span class="badge-unread"></span></div></div><div class="copy"><strong>3 · 群聊 · 未读</strong><span>用户上传头像 · 右上 7px 红点 · 1.5px 描边切割</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item nine-grid" style="transform: scale(0.85);"><div style="--c:#B45741;">小</div><div style="--c:#3B82F6;">林</div><div style="--c:#059669;">吴</div><div style="--c:#D97706;">沈</div><span class="badge-mention">@</span></div></div><div class="copy"><strong>4 · 群聊 · 九宫格 + @me</strong><span>后端自动合成 · 橙色 @ 角标覆盖在头像上，不替换头像</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item gradient-3" style="transform: scale(0.85);"><span class="text-2">奔跑</span></div></div><div class="copy"><strong>5 · 群聊 · 双字 fallback</strong><span>新群无头像 · 取前 2 字 · hash 全名上色</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item" style="transform: scale(0.85);"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop" alt=""><span class="badge-thread-corner" style="--c:#7c5cfc;"><span>#</span></span></div></div><div class="copy"><strong>6-8 · 同群 3 个子区</strong><span>共享父群头像 · 右下 14px 圆形 # 角标 · 颜色 hash 子区名稳定区分</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item" style="background:#FFEDD5;font-size:15px;transform: scale(0.85);">🔥</div></div><div class="copy"><strong>9 · 用户自选 emoji</strong><span>P2 功能 · 覆盖一切优先级 · 高频群辨识度终极</span></div></div>
+      <div class="row"><div class="swatch"><div class="rail-item muted gradient-4" style="transform: scale(0.85);"><span class="text-2">老群</span></div></div><div class="copy"><strong>10 · 免打扰</strong><span>主体 opacity 0.55 · 红点变灰</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>06 · 实施清单</h2>
+  <div class="section-title">改 VerticalRail.tsx 一个文件可达 P0+P1</div>
+  <div class="footnotes">
+    <h4>改动锚点</h4>
+    <ol>
+      <li><b>P0-1</b> · <code>src/components/octo/VerticalRail.tsx:127-141</code>：所有分支统一接 <code>&lt;Avatar&gt;</code>，imageSrc 用 <code>channelAvatarUrl(channelInfo)</code>，AvatarFallback 才走文字。</li>
+      <li><b>P0-2</b> · <code>src/utils/avatar.ts</code>：新增 <code>getInitials(name, max=2)</code>，中文取前 2 字、英文取首字母缩写、混合按词切分。</li>
+      <li><b>P0-3</b> · <code>src/utils/titleColor.ts</code>：保留稳定 hash，但<b>把首字符权重降低</b>（hash 整名长度 + 后半段，避免「都市/都江堰」撞色）。</li>
+      <li><b>P1-1</b> · <code>VerticalRail.tsx:115-126</code>：mention 状态从「整体替换」改为「叠加 14px 角标」；保留头像主体。</li>
+      <li><b>P1-2</b> · 新增 <code>ThreadBadge</code> 组件：根据 <code>channelType === ChannelTypeCommunityTopic</code> 渲染右下角 # 圆点，颜色 = <code>getThreadHueColor(name)</code>（建议从主色板中挑 6-8 色避开 mention 橙）。</li>
+      <li><b>P1-3</b> · <code>VerticalRail.tsx</code>：把原生 <code>title</code> 替换为 shadcn Tooltip，方位 right，内容 = 名称 + 最近一条消息预览。</li>
+      <li><b>P2</b> · <code>OctoInfoDrawer.tsx</code>：增加「自定义 emoji」字段写入 <code>/user/pinned</code>，需要后端配合加字段。</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

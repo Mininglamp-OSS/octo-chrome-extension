@@ -17,6 +17,57 @@ export function getFirstChar(name: string): string {
   return ch;
 }
 
+/**
+ * Rail / 头像 fallback 文字：
+ *  - 「Product Review」→ PR（含空白的 ASCII 走词首缩写）
+ *  - 「alice」→ AL（纯 ASCII 单词大写化前 2 字母）
+ *  - 「都市青年」→ 都市（中文/混合按 grapheme 取前 2）
+ *  - 「👋hi」→ 👋（emoji 一个就够，多于 1 个 grapheme 时若首是 emoji 单独返回避免视觉杂）
+ *  避免「都」「都」「都」级别的撞首字。
+ */
+export function getInitials(name: string, max = 2): string {
+  if (!name) return "?";
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+
+  // 1) 全 ASCII 且含空白 → 词首字母缩写
+  if (/^[\x20-\x7e]+$/.test(trimmed) && /\s/.test(trimmed)) {
+    const initials = trimmed
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, max)
+      .map((word) => word[0]?.toUpperCase() ?? "")
+      .join("");
+    if (initials) return initials;
+  }
+
+  // 2) 按 grapheme 取前 max 个
+  const Seg = (Intl as unknown as { Segmenter?: new (...args: unknown[]) => Intl.Segmenter })
+    .Segmenter;
+  const chars: string[] = [];
+  if (typeof Seg === "function") {
+    const segmenter = new Seg(undefined, { granularity: "grapheme" });
+    for (const seg of segmenter.segment(trimmed)) {
+      chars.push(seg.segment);
+      if (chars.length >= max) break;
+    }
+  } else {
+    for (const c of trimmed) {
+      chars.push(c);
+      if (chars.length >= max) break;
+    }
+  }
+  if (chars.length === 0) return "?";
+
+  // 3) 首字符是 emoji/特殊符号则只取首字（视觉避免「👋h」奇怪组合）
+  const first = chars[0] ?? "";
+  if (!/^[\p{L}\p{N}]/u.test(first)) return first;
+
+  const out = chars.join("");
+  if (/^[a-zA-Z0-9]+$/.test(out)) return out.toUpperCase();
+  return out;
+}
+
 export function avatarGradient(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) {

@@ -1,17 +1,17 @@
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { api } from "@/api/client";
+import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { usePinned } from "@/api/queries/pinned";
 import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
-import { ChannelType } from "@/const/channel";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import type { ConversationView } from "@/im/conversation";
 import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
 import { useCurrentChannel } from "@/stores/currentChannel";
-import { getFirstChar } from "@/utils/avatar";
-import { cn } from "@/utils/cn";
-import { getTitleColor } from "@/utils/titleColor";
+import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
+import { RailAvatar } from "./RailAvatar";
+import { RailHoverCard } from "./RailHoverCard";
 
 interface RailItem {
   channelId: string;
@@ -20,6 +20,7 @@ interface RailItem {
   unread: number;
   mentionCount: number;
   muted: boolean;
+  logo?: string;
 }
 
 interface Props {
@@ -38,6 +39,11 @@ function resolveDisplayName(info: ChannelInfo | undefined, fallback: string): st
 /**
  * 对照 mirror OctoSidepanelLayout.renderRail()（apps/extension/entrypoints/sidepanel/OctoSidepanelLayout.tsx:1246）
  * 仅渲染 pinned 项；底部 +N 显示会话总数，点击交由父层打开 picker drawer。
+ *
+ * 头像视觉规则收敛在 RailAvatar 组件里（见 .design/rail-pin-avatar.html）：
+ *  - 真头像优先，AvatarFallback 走双字符
+ *  - 子区右下加 hash 色 # 角标（同群多子区可区分）
+ *  - mention 状态叠加角标而非替换主体
  */
 export function VerticalRail({ onShowPicker }: Props) {
   const { conversations } = useConversationViews();
@@ -46,6 +52,8 @@ export function VerticalRail({ onShowPicker }: Props) {
   const currentType = useCurrentChannel((s) => s.channelType);
   const select = useCurrentChannel((s) => s.select);
   const atMeCounts = useAtMeStore((s) => s.counts);
+  const spaceId = useSpaceStore(selectCurrentSpaceId);
+  const baseURL = getApiUrl();
 
   // 与 mirror 一致：rail 显示名走 channelInfo.orgData.displayName（remark || name）
   // 而非 conversation.name。pinned 列表按需为每项拉一次 channelInfo（TanStack Query 自动缓存去重）。
@@ -53,9 +61,7 @@ export function VerticalRail({ onShowPicker }: Props) {
     queries: (pinnedItems ?? []).map((p) => ({
       queryKey: ["channel", p.channel_type, p.channel_id],
       async queryFn(): Promise<ChannelInfo> {
-        const data = await api
-          .get(Endpoints.channelInfo(p.channel_id, p.channel_type))
-          .json();
+        const data = await api.get(Endpoints.channelInfo(p.channel_id, p.channel_type)).json();
         return ChannelInfoSchema.parse(data);
       },
       staleTime: 5 * 60_000,
@@ -75,6 +81,7 @@ export function VerticalRail({ onShowPicker }: Props) {
       const live = atMeCounts.get(atMeKey(p.channel_id, p.channel_type)) ?? 0;
       const info = channelInfoQueries[idx]?.data;
       const fallback = c?.name ?? p.channel_id;
+      const logo = info?.logo?.trim();
       list.push({
         channelId: p.channel_id,
         channelType: p.channel_type,
@@ -82,6 +89,7 @@ export function VerticalRail({ onShowPicker }: Props) {
         unread: c?.unread ?? 0,
         mentionCount: Math.max(c?.mentionCount ?? 0, live),
         muted: false,
+        ...(logo && { logo }),
       });
     });
     return { visible: list, hiddenCount: Math.max(0, conversations.length - list.length) };
@@ -90,68 +98,49 @@ export function VerticalRail({ onShowPicker }: Props) {
   if (visible.length === 0 && hiddenCount === 0) return null;
 
   return (
-    <nav className="flex flex-col items-center gap-1 px-0 py-2.5">
+    <nav className="flex flex-col items-center gap-1.5 px-0 py-2.5">
       {visible.map((item) => {
         const isCurrent = item.channelId === currentId && item.channelType === currentType;
-        const isPrivate = item.channelType === ChannelType.person;
-        const hasMention = item.mentionCount > 0;
-        const hasUnread = item.unread > 0 && !hasMention;
-        const railItemBackground = getTitleColor(item.name);
-
         return (
-          <button
-            key={`${item.channelId}:${item.channelType}`}
-            type="button"
-            title={item.name}
-            onClick={() => {
-              if (isCurrent) return;
-              select(item.channelId, item.channelType);
-            }}
-            className={cn(
-              "relative grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border-none bg-transparent p-0 transition-all duration-150",
-              item.muted && "[&_.rail-icon]:opacity-55",
-            )}
-          >
-            {hasMention ? (
-              <span
-                className={cn(
-                  "rail-icon grid h-full w-full select-none place-items-center rounded-md text-[18px] font-bold leading-none tracking-tight text-white",
-                )}
-                style={{
-                  background: "#F97316",
-                  boxShadow: "0 2px 6px rgba(249, 115, 22, 0.4)",
+          <HoverCard key={`${item.channelId}:${item.channelType}`} openDelay={250} closeDelay={100}>
+            <HoverCardTrigger asChild>
+              <button
+                type="button"
+                onClick={() => {
+                  if (isCurrent) return;
+                  select(item.channelId, item.channelType);
                 }}
+                aria-label={item.name}
+                className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md border-none bg-transparent p-0"
               >
-                @
-              </span>
-            ) : isPrivate ? (
-              <span
-                className="rail-icon grid h-[26px] w-[26px] select-none place-items-center rounded-full text-[13px] font-semibold leading-none text-white"
-                style={{ background: railItemBackground }}
-              >
-                {getFirstChar(item.name)}
-              </span>
-            ) : (
-              <span
-                className="rail-icon grid h-full w-full select-none place-items-center rounded-md text-[15px] font-medium leading-none text-white"
-                style={{ background: railItemBackground }}
-              >
-                {getFirstChar(item.name)}
-              </span>
-            )}
-
-            {/* 未读小红点 */}
-            {hasUnread && (
-              <span
-                className={cn(
-                  "absolute right-px top-px h-[7px] w-[7px] rounded-full border-[1.5px] border-(--color-background)",
-                  item.muted
-                    ? "bg-(--color-muted-foreground)/60"
-                    : "bg-[#F54A45] shadow-[0_0_0_0.5px_rgba(245,74,69,0.4)]",
-                )}
+                <RailAvatar
+                  channelId={item.channelId}
+                  channelType={item.channelType}
+                  name={item.name}
+                  unread={item.unread}
+                  mentionCount={item.mentionCount}
+                  muted={item.muted}
+                  active={isCurrent}
+                  baseURL={baseURL}
+                  spaceId={spaceId}
+                  {...(item.logo && { logo: item.logo })}
+                />
+              </button>
+            </HoverCardTrigger>
+            <HoverCardContent side="left" align="center" sideOffset={10} className="p-0">
+              <RailHoverCard
+                channelId={item.channelId}
+                channelType={item.channelType}
+                name={item.name}
+                unread={item.unread}
+                mentionCount={item.mentionCount}
+                muted={item.muted}
+                baseURL={baseURL}
+                spaceId={spaceId}
+                {...(item.logo && { logo: item.logo })}
               />
-            )}
-          </button>
+            </HoverCardContent>
+          </HoverCard>
         );
       })}
 

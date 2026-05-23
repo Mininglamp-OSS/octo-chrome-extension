@@ -1,0 +1,891 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Rail · Hover Preview 设计</title>
+<style>
+:root {
+  --bg-app: #efeff2;
+  --bg-elev: #ffffff;
+  --bg-popover: #ffffff;
+  --fg: #18181b;
+  --fg-soft: #3f3f46;
+  --muted: #f4f4f5;
+  --muted-fg: #71717a;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+  --primary: #7c5cfc;
+  --primary-soft: rgba(124, 92, 252, 0.12);
+  --mention: #f97316;
+  --unread: #f54a45;
+  --shadow-card: 0 1px 2px rgba(20,20,28,0.04), 0 8px 24px rgba(20,20,28,0.06);
+  --shadow-popover: 0 12px 32px rgba(20,20,28,0.18), 0 4px 12px rgba(20,20,28,0.10), 0 0 0 1px rgba(20,20,28,0.04);
+}
+html.dark {
+  --bg-app: #131316;
+  --bg-elev: #18181b;
+  --bg-popover: #1c1c1f;
+  --fg: #fafafa;
+  --fg-soft: #d4d4d8;
+  --muted: #27272a;
+  --muted-fg: #a1a1aa;
+  --border: #27272a;
+  --border-strong: #3f3f46;
+  --primary: #b59eff;
+  --primary-soft: rgba(181, 158, 255, 0.16);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-popover: 0 12px 32px rgba(0,0,0,0.55), 0 4px 12px rgba(0,0,0,0.40), 0 0 0 1px rgba(255,255,255,0.06);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  min-height: 100vh;
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.10) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.08) 0px, transparent 45%),
+    linear-gradient(180deg, #fafafa, var(--bg-app));
+  font-size: 14px;
+  line-height: 1.55;
+  letter-spacing: -0.005em;
+}
+html.dark body {
+  background:
+    radial-gradient(at 0% 0%, rgba(124,92,252,0.18) 0px, transparent 45%),
+    radial-gradient(at 100% 100%, rgba(0,212,170,0.10) 0px, transparent 45%),
+    linear-gradient(180deg, #0a0a0a, var(--bg-app));
+}
+.mono { font-family: ui-monospace, SFMono-Regular, "JetBrains Mono", Menlo, monospace; }
+
+.page { max-width: 1200px; margin: 0 auto; padding: 56px 32px 96px; }
+header.hero { margin-bottom: 56px; display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; }
+.hero h1 { font-size: 36px; line-height: 1.1; letter-spacing: -0.025em; font-weight: 700; margin: 0 0 12px; }
+.hero .lede { color: var(--muted-fg); max-width: 56ch; margin: 0; }
+.hero .meta { color: var(--muted-fg); font-size: 12px; margin-top: 14px; }
+.hero .meta b { color: var(--fg-soft); font-weight: 600; }
+
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border-radius: 999px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  color: var(--muted-fg); font-size: 12px; cursor: pointer;
+  box-shadow: var(--shadow-card);
+}
+.theme-toggle:hover { color: var(--fg); border-color: var(--border-strong); }
+
+section + section { margin-top: 64px; }
+section h2 {
+  font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--muted-fg); text-transform: uppercase;
+  margin: 0 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+section h2 + .section-title {
+  font-size: 24px; font-weight: 600; letter-spacing: -0.018em;
+  margin: 0 0 6px;
+}
+section h2 + .section-title + p { color: var(--muted-fg); margin: 0 0 28px; max-width: 70ch; }
+
+/* === RAIL ITEM PRIMITIVES === */
+.rail-item {
+  position: relative;
+  width: 32px; height: 32px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  font-weight: 600; color: white;
+  user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", system-ui, sans-serif;
+}
+.rail-item.private { border-radius: 999px; width: 26px; height: 26px; }
+.rail-item .text-2 { font-size: 11px; line-height: 1; letter-spacing: -0.04em; font-weight: 700; }
+.rail-item img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.gradient-1 { background: linear-gradient(135deg, #B45741, #8E3A28); }
+.gradient-2 { background: linear-gradient(135deg, #3B82F6, #1D4ED8); }
+.gradient-3 { background: linear-gradient(135deg, #8B5CF6, #6D28D9); }
+.gradient-4 { background: linear-gradient(135deg, #B91C1C, #7F1D1D); }
+.badge-unread {
+  position: absolute; right: -2px; top: -2px;
+  width: 10px; height: 10px; border-radius: 999px;
+  background: var(--unread); border: 1.5px solid var(--bg-elev);
+}
+.badge-mention {
+  position: absolute; right: -4px; top: -4px;
+  height: 14px; min-width: 14px; padding: 0 3px;
+  border-radius: 999px; background: var(--mention); color: white;
+  font-size: 9px; font-weight: 800; line-height: 14px;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--bg-elev);
+}
+.badge-thread {
+  position: absolute; right: -3px; bottom: -3px;
+  width: 14px; height: 14px; border-radius: 999px;
+  background: var(--c, var(--primary)); color: white;
+  font-size: 9px; font-weight: 800;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--bg-elev);
+}
+
+/* === BENCHMARKS === */
+.bench {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(2, 1fr);
+}
+.bench .card {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 22px;
+  box-shadow: var(--shadow-card);
+}
+.bench .card .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.bench .card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.bench .card .tag {
+  font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; background: var(--muted); color: var(--muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.bench .stage {
+  margin: 14px 0; padding: 24px 16px;
+  background: var(--muted); border-radius: 10px;
+  display: grid; place-items: center; min-height: 100px;
+  position: relative;
+}
+.bench .note { color: var(--muted-fg); font-size: 12px; line-height: 1.6; margin: 0; }
+.bench .note b { color: var(--fg); font-weight: 600; }
+
+/* === TOOLTIP / HOVER CARD PRIMITIVES === */
+
+/* A. 极简 Tooltip */
+.tip-mini {
+  position: absolute;
+  padding: 6px 10px;
+  background: rgba(24, 24, 27, 0.94);
+  color: #fafafa;
+  font-size: 12px; line-height: 1.4;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+}
+.tip-mini::after {
+  content: ''; position: absolute;
+  top: 50%; transform: translateY(-50%);
+  width: 0; height: 0;
+}
+.tip-mini.left { right: calc(100% + 8px); top: 50%; transform: translateY(-50%); }
+.tip-mini.left::after { left: 100%; border: 4px solid transparent; border-left-color: rgba(24, 24, 27, 0.94); }
+
+/* B. 信息卡片 HoverCard */
+.tip-card {
+  position: absolute;
+  width: 260px;
+  background: var(--bg-popover);
+  color: var(--fg);
+  border-radius: 10px;
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.tip-card.left { right: calc(100% + 10px); top: 50%; transform: translateY(-50%); }
+.tip-card .head {
+  padding: 12px 14px 10px;
+  display: grid; grid-template-columns: 36px 1fr; gap: 10px;
+  align-items: center;
+}
+.tip-card .head .avatar {
+  width: 36px; height: 36px; border-radius: 8px; overflow: hidden;
+  display: grid; place-items: center;
+  font-weight: 700; color: white; font-size: 14px;
+  position: relative;
+}
+.tip-card .head .avatar.private { border-radius: 999px; }
+.tip-card .head .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.tip-card .head .text { min-width: 0; }
+.tip-card .head .text .name {
+  font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tip-card .head .text .sub {
+  font-size: 11px; color: var(--muted-fg);
+  display: flex; align-items: center; gap: 6px; margin-top: 2px;
+}
+.tip-card .head .text .sub .kind-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; padding: 1px 6px;
+  border-radius: 4px; background: var(--muted); color: var(--fg-soft);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tip-card .body {
+  padding: 8px 14px 12px;
+  border-top: 1px solid var(--border);
+}
+.tip-card .body .preview {
+  display: flex; gap: 6px; align-items: baseline;
+  font-size: 12px; color: var(--fg-soft); line-height: 1.45;
+}
+.tip-card .body .preview .who {
+  color: var(--muted-fg); font-weight: 500; flex-shrink: 0; max-width: 80px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tip-card .body .preview .msg {
+  flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tip-card .meta-row {
+  display: flex; gap: 8px; margin-top: 8px;
+  align-items: center;
+}
+.tip-card .meta-row .pill {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; padding: 2px 7px; border-radius: 999px;
+  background: var(--muted); color: var(--muted-fg);
+}
+.tip-card .meta-row .pill.unread { background: rgba(245, 74, 69, 0.12); color: var(--unread); font-weight: 700; }
+.tip-card .meta-row .pill.mention { background: rgba(249, 115, 22, 0.14); color: var(--mention); font-weight: 700; }
+.tip-card .meta-row .pill.muted { background: var(--muted); color: var(--muted-fg); }
+.tip-card .meta-row .spacer { flex: 1; }
+.tip-card .meta-row .hint {
+  font-size: 10px; color: var(--muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.tip-card .hint kbd {
+  background: var(--muted); border: 1px solid var(--border-strong);
+  padding: 1px 4px; border-radius: 3px; font-size: 9px;
+  color: var(--fg-soft);
+}
+
+.tip-card.thread .parent-strip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px;
+  background: var(--primary-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--fg-soft);
+}
+.tip-card.thread .parent-strip .p-avatar { width: 16px; height: 16px; border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.tip-card.thread .parent-strip .p-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.tip-card.thread .parent-strip .p-name { font-weight: 600; color: var(--fg); }
+.tip-card.thread .parent-strip svg { color: var(--muted-fg); flex-shrink: 0; }
+
+/* C. 富交互 (mock 演示) */
+.tip-card .actions {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;
+  padding: 6px; border-top: 1px solid var(--border); background: var(--muted);
+}
+.tip-card .actions button {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px 4px;
+  background: transparent; border: none; border-radius: 6px;
+  color: var(--fg-soft); font-size: 11px; cursor: pointer;
+  font-family: inherit;
+}
+.tip-card .actions button:hover { background: var(--bg-popover); color: var(--fg); }
+
+/* arrow indicators */
+.tip-arrow-left {
+  position: absolute;
+  right: -5px; top: 50%; transform: translateY(-50%) rotate(45deg);
+  width: 10px; height: 10px;
+  background: var(--bg-popover);
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+}
+
+/* === RAIL DEMO === */
+.demo-row {
+  display: grid; grid-template-columns: 1fr; gap: 40px;
+  padding: 32px 24px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+}
+.demo-row .label {
+  font-size: 11px; color: var(--muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  margin-bottom: 12px;
+}
+
+.rail-with-tip {
+  display: flex; align-items: center; gap: 0;
+  position: relative;
+  padding-left: 280px;
+}
+.rail-with-tip .rail-anchor {
+  width: 48px;
+  background: var(--muted);
+  border-radius: 10px;
+  padding: 12px 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  position: relative;
+}
+.rail-with-tip .arrow-line {
+  height: 1px; background: var(--border-strong);
+  position: relative; flex: 1; max-width: 0;
+}
+
+/* recommended */
+.recommend {
+  margin-top: 24px;
+  padding: 22px 24px;
+  background: linear-gradient(135deg, rgba(124,92,252,0.08), rgba(0,212,170,0.06));
+  border: 1px solid var(--primary);
+  border-radius: 14px;
+}
+.recommend .pin {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--primary); text-transform: uppercase;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin: 0 0 6px;
+}
+.recommend h3 { margin: 0 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -0.015em; }
+.recommend p { margin: 0; color: var(--fg-soft); font-size: 13px; max-width: 80ch; }
+
+/* states grid */
+.states-grid {
+  display: grid; gap: 28px;
+  grid-template-columns: repeat(2, 1fr);
+}
+.states-grid .case {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 24px;
+  box-shadow: var(--shadow-card);
+}
+.states-grid .case .label {
+  font-size: 11px; color: var(--muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  margin-bottom: 18px;
+}
+.states-grid .case .stage {
+  position: relative;
+  padding: 32px 0 32px 240px;
+  display: flex; align-items: center;
+}
+.states-grid .case .stage .rail-mini {
+  width: 48px;
+  background: var(--muted);
+  border-radius: 10px;
+  padding: 10px 0;
+  display: flex; flex-direction: column; align-items: center;
+  position: relative;
+}
+.states-grid .case .desc { color: var(--muted-fg); font-size: 12px; margin: 14px 0 0; line-height: 1.55; }
+
+/* timing diagram */
+.timing {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 14px; padding: 24px;
+  box-shadow: var(--shadow-card);
+}
+.timing .track {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.timing .track .what { font-size: 12px; font-weight: 600; }
+.timing .track .bar {
+  height: 22px; border-radius: 4px;
+  position: relative;
+  background: var(--muted);
+  overflow: hidden;
+}
+.timing .track .bar .seg {
+  position: absolute; top: 0; bottom: 0;
+  border-radius: 3px;
+  font-size: 10px; color: white;
+  display: grid; place-items: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.timing .track .bar .seg.intent { background: var(--muted-fg); }
+.timing .track .bar .seg.delay { background: var(--primary); opacity: 0.4; }
+.timing .track .bar .seg.shown { background: var(--primary); }
+.timing .track .bar .seg.fade  { background: var(--mention); opacity: 0.7; }
+.timing .ms-axis {
+  display: grid; grid-template-columns: 100px 1fr; gap: 12px;
+  margin-top: 8px;
+}
+.timing .ms-axis .ticks {
+  display: flex; justify-content: space-between;
+  font-size: 10px; color: var(--muted-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-top: 1px solid var(--border);
+  padding-top: 4px;
+}
+
+/* footnotes */
+.footnotes {
+  margin-top: 64px; padding: 24px;
+  background: var(--muted);
+  border-radius: 14px; font-size: 12px; color: var(--fg-soft);
+}
+.footnotes h4 { margin: 0 0 8px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-fg); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.footnotes ol { margin: 0; padding-left: 20px; line-height: 1.7; }
+.footnotes code { background: var(--bg-elev); padding: 1px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="hero">
+  <div>
+    <h1>Rail · Hover Preview</h1>
+    <p class="lede">
+      32×32 头像辨识度有上限。Hover 上面浮出一张<b>带类型 + 父群 + 最近一条消息</b>的卡片，把「我是谁」补全。本稿对比 A/B/C 三种密度方案，最终落到 HoverCard。
+    </p>
+    <p class="meta">
+      <b>触发</b> 250ms delay + 100ms 退出 · <b>位置</b> 左侧浮出（rail 在 sidepanel 右列） · <b>不可点击的 popup</b>
+    </p>
+  </div>
+  <button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark')">
+    <span>切换暗色 / 亮色</span>
+  </button>
+</header>
+
+<!-- ========================================================== -->
+<section>
+  <h2>01 · Benchmarks</h2>
+  <div class="section-title">业界做法</div>
+  <p>同样是 sidebar pin 头像 hover，不同产品的密度选择差异很大。先看 4 个参考：</p>
+
+  <div class="bench">
+    <div class="card">
+      <div class="head">
+        <h3>Discord · 服务器列表</h3>
+        <span class="tag">极简</span>
+      </div>
+      <div class="stage">
+        <div class="rail-item gradient-2">
+          <span class="text-2">奔跑</span>
+          <div class="tip-mini left">奔跑吧伙计</div>
+        </div>
+      </div>
+      <p class="note"><b>只显示一行 server 名</b>。强项：低延迟、视线不被遮。弱项：完全不解决「这群是干啥的」。</p>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <h3>Slack · DM 列表</h3>
+        <span class="tag">名 + 状态</span>
+      </div>
+      <div class="stage">
+        <div class="rail-item private gradient-1">
+          <span class="text-2">沈</span>
+          <div class="tip-mini left">沈鑫 · 🟢 Active</div>
+        </div>
+      </div>
+      <p class="note"><b>名 + 在线状态/工作中</b>。状态有用，但群聊场景没有「状态」概念，套用不动。</p>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <h3>飞书 · 群头像</h3>
+        <span class="tag">卡片 + 操作</span>
+      </div>
+      <div class="stage">
+        <div class="rail-item gradient-3">
+          <span class="text-2">研发</span>
+          <div class="tip-card left" style="width: 220px;">
+            <div class="head">
+              <div class="avatar gradient-3"><span style="font-size:11px;">研发</span></div>
+              <div class="text">
+                <div class="name">研发周会</div>
+                <div class="sub">12 人 · 静音</div>
+              </div>
+            </div>
+            <div class="actions">
+              <button>👁 查看</button>
+              <button>🔕 静音</button>
+              <button>📌 取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note">卡片含操作按钮。<b>问题：hover popup 配可点击操作，体验脆弱</b>——指针离开就消失，常误关。</p>
+    </div>
+
+    <div class="card">
+      <div class="head">
+        <h3>Linear · Project</h3>
+        <span class="tag">名 + 上下文</span>
+      </div>
+      <div class="stage">
+        <div class="rail-item" style="background:#FFEDD5;font-size:18px;">🔥</div>
+        <div class="tip-card left" style="top:50%;transform:translateY(-50%);width:220px;">
+          <div class="head">
+            <div class="avatar" style="background:#FFEDD5;font-size:16px;color:#000;">🔥</div>
+            <div class="text">
+              <div class="name">Hot Path Optimization</div>
+              <div class="sub"><span class="kind-chip">PROJECT</span> 8 issues</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>名 + 类型徽标 + 1 行元信息</b>。无操作按钮，纯只读卡片。Notion / Linear 都是这套，体验最稳。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>02 · 三种方案对比</h2>
+  <div class="section-title">密度选择：从 1 行 tooltip 到富信息卡片</div>
+  <p>结合 rail 在右列 + +83 群的真实负载，密度过低则 hover 无用，过高则鼠标无意停留就被打扰。</p>
+
+  <div class="demo-row">
+    <div class="label">A · 极简 Tooltip（≈ 当前 title 属性升级版）</div>
+    <div class="rail-with-tip">
+      <div class="rail-anchor">
+        <div class="rail-item gradient-2"><span class="text-2">都市</span></div>
+        <div class="rail-item gradient-3"><span class="text-2">都江</span></div>
+        <div class="rail-item gradient-1"><span class="text-2">都灵</span></div>
+        <div class="tip-mini left" style="top:50%;transform:translateY(-50%);">都市青年杂谈群</div>
+      </div>
+    </div>
+    <p style="color:var(--muted-fg);font-size:12px;margin:14px 0 0;line-height:1.55;">
+      <b>+</b> 实现最简（shadcn Tooltip）；延迟低；不遮主体 ·
+      <b>—</b> 只补全文字，<b>没解决</b>「这群最近在说啥」「这是哪个父群的子区」
+    </p>
+  </div>
+
+  <div class="demo-row" style="margin-top: 24px; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft);">
+    <div class="label" style="color:var(--primary);">B · HoverCard 信息卡片 · <b>推荐</b></div>
+    <div class="rail-with-tip">
+      <div class="rail-anchor">
+        <div class="rail-item gradient-2"><span class="text-2">都市</span></div>
+        <div class="rail-item gradient-3"><span class="text-2">都江</span></div>
+        <div class="rail-item gradient-1"><span class="text-2">都灵</span></div>
+        <div class="tip-card left" style="top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar gradient-2"><span style="font-size:12px;">都市</span></div>
+            <div class="text">
+              <div class="name">都市青年杂谈群</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 42 人</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview">
+              <span class="who">林小满:</span>
+              <span class="msg">下班一起撸串吗，老地方</span>
+            </div>
+            <div class="meta-row">
+              <span class="pill unread">3 条未读</span>
+              <span class="spacer"></span>
+              <span class="hint">2 分钟前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--muted-fg);font-size:12px;margin:14px 0 0;line-height:1.55;">
+      <b>+</b> 名 + 类型 + 成员数 + 最近一条消息 + 未读时间，所有「我在不在乎」决策都能现场判断 ·
+      <b>—</b> 260px 宽 + 80ms 渲染开销
+    </p>
+  </div>
+
+  <div class="demo-row" style="margin-top: 24px;">
+    <div class="label">C · 带操作按钮的 Popup（不推荐）</div>
+    <div class="rail-with-tip">
+      <div class="rail-anchor">
+        <div class="rail-item gradient-2"><span class="text-2">都市</span></div>
+        <div class="rail-item gradient-3"><span class="text-2">都江</span></div>
+        <div class="rail-item gradient-1"><span class="text-2">都灵</span></div>
+        <div class="tip-card left" style="top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar gradient-2"><span style="font-size:12px;">都市</span></div>
+            <div class="text">
+              <div class="name">都市青年杂谈群</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 42 人</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">林小满:</span><span class="msg">下班一起撸串吗</span></div>
+          </div>
+          <div class="actions">
+            <button>👁 标已读</button>
+            <button>🔕 静音</button>
+            <button>📌 取消 pin</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p style="color:var(--muted-fg);font-size:12px;margin:14px 0 0;line-height:1.55;">
+      <b>+</b> 一次 hover 完成快捷操作 ·
+      <b>—</b> hover popup 配可点击操作<b>本质冲突</b>：鼠标从 rail 移到操作按钮的瞬间会触发 leave → 闪烁消失。
+      操作面板应该走<b>右键菜单</b>，而不是 hover。
+    </p>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>03 · B 方案的 6 种 Case</h2>
+  <div class="section-title">不同会话类型的 HoverCard 结构</div>
+  <p>同一个 HoverCard 模板，根据会话类型展现不同信息层。</p>
+
+  <div class="states-grid">
+
+    <!-- 群聊 + 真头像 + 未读 -->
+    <div class="case">
+      <div class="label">CASE 1 · 群聊 / 用户上传头像 / 未读</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop"><span class="badge-unread"></span></div>
+        </div>
+        <div class="tip-card" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop"></div>
+            <div class="text">
+              <div class="name">设计周会</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 12 人</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">吴大伟:</span><span class="msg">明天下午 3 点会议室 B</span></div>
+            <div class="meta-row">
+              <span class="pill unread">5 条未读</span>
+              <span class="spacer"></span>
+              <span class="hint">12 分钟前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">最常见 case。头像照搬 rail item，meta 行用 <b>「未读 N 条 / 最后活跃时间」</b> 提示新鲜度。</p>
+    </div>
+
+    <!-- 子区 -->
+    <div class="case">
+      <div class="label">CASE 2 · 子区 Thread · 关键</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop"><span class="badge-thread" style="--c:#7c5cfc;">#</span></div>
+        </div>
+        <div class="tip-card thread" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <!-- parent strip -->
+          <div class="parent-strip">
+            <div class="p-avatar"><img src="https://images.unsplash.com/photo-1531297484001-80022131f5a1?w=80&h=80&fit=crop"></div>
+            <span>来自</span>
+            <span class="p-name">设计周会</span>
+            <svg width="10" height="10" viewBox="0 0 16 16" fill="none"><path d="M6 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          </div>
+          <div class="head">
+            <div class="avatar" style="background:#7c5cfc;">
+              <span style="font-size:14px;font-weight:800;">#</span>
+            </div>
+            <div class="text">
+              <div class="name">PR 周会准备</div>
+              <div class="sub"><span class="kind-chip" style="background: var(--primary-soft); color: var(--primary);">子区</span>· 5 人参与</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">沈鑫:</span><span class="msg">幻灯片初版我下午发给大家</span></div>
+            <div class="meta-row">
+              <span class="spacer"></span>
+              <span class="hint">26 分钟前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc"><b>顶部多一条父群条</b>「来自 设计周会 ›」，解决「我 pin 了 3 个同群子区，到底是哪个群的」。父群头像 16×16 缩略。</p>
+    </div>
+
+    <!-- 私聊 -->
+    <div class="case">
+      <div class="label">CASE 3 · 私聊 / @me</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item private"><img src="https://i.pravatar.cc/64?img=14"><span class="badge-mention">@</span></div>
+        </div>
+        <div class="tip-card" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar private"><img src="https://i.pravatar.cc/64?img=14"></div>
+            <div class="text">
+              <div class="name">林小满</div>
+              <div class="sub"><span class="kind-chip">私聊</span>· @设计部</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">林小满:</span><span class="msg">@我 看下这版改稿，今晚要</span></div>
+            <div class="meta-row">
+              <span class="pill mention">@ 1</span>
+              <span class="spacer"></span>
+              <span class="hint">刚刚</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">私聊头像走圆形。sub 行显示<b>用户所在部门/角色</b>（如果 channelInfo.orgData 有）。@ 状态高亮成橙色 pill。</p>
+    </div>
+
+    <!-- 9 grid fallback -->
+    <div class="case">
+      <div class="label">CASE 4 · 群聊 / 九宫格自动合成</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item" style="overflow:hidden;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(255,255,255,0.4);">
+            <div style="background:#B45741;display:grid;place-items:center;font-size:7px;color:white;font-weight:600;">小</div>
+            <div style="background:#3B82F6;display:grid;place-items:center;font-size:7px;color:white;font-weight:600;">林</div>
+            <div style="background:#059669;display:grid;place-items:center;font-size:7px;color:white;font-weight:600;">吴</div>
+            <div style="background:#D97706;display:grid;place-items:center;font-size:7px;color:white;font-weight:600;">沈</div>
+          </div>
+        </div>
+        <div class="tip-card" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar" style="overflow:hidden;display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(255,255,255,0.4);">
+              <div style="background:#B45741;display:grid;place-items:center;font-size:8px;color:white;font-weight:600;">小</div>
+              <div style="background:#3B82F6;display:grid;place-items:center;font-size:8px;color:white;font-weight:600;">林</div>
+              <div style="background:#059669;display:grid;place-items:center;font-size:8px;color:white;font-weight:600;">吴</div>
+              <div style="background:#D97706;display:grid;place-items:center;font-size:8px;color:white;font-weight:600;">沈</div>
+            </div>
+            <div class="text">
+              <div class="name">前端基础架构组</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 4 人</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">林小满:</span><span class="msg">webpack 升级 PR 我来 review</span></div>
+            <div class="meta-row">
+              <span class="spacer"></span>
+              <span class="hint">1 小时前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">没有未读时 meta 行只剩活跃时间。九宫格头像在卡片里放大到 36×36 仍清晰，<b>用户能看出成员都是谁</b>。</p>
+    </div>
+
+    <!-- muted -->
+    <div class="case">
+      <div class="label">CASE 5 · 静音 / 有未读但不打扰</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item gradient-4" style="opacity:0.55;"><span class="text-2">老群</span><span class="badge-unread" style="background:var(--muted-fg);"></span></div>
+        </div>
+        <div class="tip-card" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar gradient-4"><span style="font-size:11px;">老群</span></div>
+            <div class="text">
+              <div class="name">老同学聚一聚</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 128 人 · 🔕</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">老王:</span><span class="msg">[图片]</span></div>
+            <div class="meta-row">
+              <span class="pill muted">未读 42（静音）</span>
+              <span class="spacer"></span>
+              <span class="hint">昨天</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">静音群的未读 pill <b>用灰色</b>而非红色，避免「焦虑感」。sub 行加 🔕 图标。</p>
+    </div>
+
+    <!-- long name -->
+    <div class="case">
+      <div class="label">CASE 6 · 长名截断</div>
+      <div class="stage">
+        <div class="rail-mini">
+          <div class="rail-item gradient-3"><span class="text-2">2026</span></div>
+        </div>
+        <div class="tip-card" style="position:absolute;left:0;top:50%;transform:translateY(-50%);">
+          <div class="tip-arrow-left"></div>
+          <div class="head">
+            <div class="avatar gradient-3"><span style="font-size:11px;">2026</span></div>
+            <div class="text">
+              <div class="name">2026 春季全员战略对齐 + Q1 OKR 跟进群</div>
+              <div class="sub"><span class="kind-chip">群聊</span>· 89 人</div>
+            </div>
+          </div>
+          <div class="body">
+            <div class="preview"><span class="who">CEO:</span><span class="msg">下周一上午 9 点必到，不接受请假</span></div>
+            <div class="meta-row">
+              <span class="pill mention">@ 全员</span>
+              <span class="spacer"></span>
+              <span class="hint">3 小时前</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="desc">name 单行截断 + ellipsis，<b>完整文本走 native title</b> 兜底，无需双层 popup。260px 宽是经验值，超过 5+ 行的卡片就过载了。</p>
+    </div>
+
+  </div>
+
+  <div class="recommend">
+    <div class="pin">推荐落地</div>
+    <h3>方案 B · HoverCard · 250ms delay · 左侧浮出</h3>
+    <p>
+      用 Radix HoverCard（shadcn 没引入需新增），<b>nofollow</b> 无可点击元素以避免 hover-leave-flicker。
+      所有 case 共用同一组件，按 channelType 切换 head/body 内容；
+      子区在卡片顶部额外渲染 parent-strip 行；
+      静音状态把红色 pill 降级为灰色；
+      meta 行的活跃时间走相对时间格式（用 utils/time.ts 已有的工具）。
+    </p>
+  </div>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>04 · 触发时序</h2>
+  <div class="section-title">为什么是 250ms 而不是 0 / 500ms</div>
+  <p>过短：扫视 rail 时一路触发卡片闪烁；过长：用户认为「这玩意儿没反应」。</p>
+
+  <div class="timing">
+    <div class="track">
+      <span class="what">扫视</span>
+      <div class="bar">
+        <span class="seg intent" style="left:0%;width:8%;">⊙</span>
+        <span class="seg intent" style="left:10%;width:8%;">⊙</span>
+        <span class="seg intent" style="left:20%;width:8%;">⊙</span>
+        <span class="seg intent" style="left:30%;width:8%;">⊙</span>
+      </div>
+    </div>
+    <div class="track">
+      <span class="what">停留</span>
+      <div class="bar">
+        <span class="seg delay" style="left:42%;width:25%;">delay 250ms</span>
+        <span class="seg shown" style="left:67%;width:30%;">HoverCard 显示</span>
+        <span class="seg fade" style="left:97%;width:3%;"></span>
+      </div>
+    </div>
+    <div class="ms-axis">
+      <span></span>
+      <div class="ticks">
+        <span>0ms</span><span>100</span><span>200</span><span>300</span><span>500</span><span>700</span><span>1000ms+</span>
+      </div>
+    </div>
+  </div>
+  <p style="color:var(--muted-fg);font-size:12px;margin:14px 0 0;line-height:1.55;">
+    <b>开启延迟 250ms</b>：扫视过程不被打断；<b>关闭延迟 100ms</b>：鼠标短暂离开（如经过其他 item）不会立即关掉。
+    切换到相邻 item 时<b>无 reopen delay</b>——已经打开的 HoverCard 立即更新内容到新 item，对应 Radix HoverCard 的 group 行为。
+  </p>
+</section>
+
+<!-- ========================================================== -->
+<section>
+  <h2>05 · 实施清单</h2>
+  <div class="footnotes">
+    <h4>改动锚点</h4>
+    <ol>
+      <li><b>P0-1</b> · 新增 <code>src/components/ui/hover-card.tsx</code>：基于 <code>@radix-ui/react-hover-card</code>，与 popover/tooltip 同风格。需 <code>pnpm add @radix-ui/react-hover-card</code>。</li>
+      <li><b>P0-2</b> · 新增 <code>src/components/octo/RailHoverCard.tsx</code>：消费 <code>useChannelInfo</code> + <code>useConversationViews</code>（取最近一条消息 + 未读 + mention），按 channelType 渲染。</li>
+      <li><b>P0-3</b> · 改 <code>src/components/octo/VerticalRail.tsx</code>：把 <code>title="..."</code> 替换为 <code>&lt;HoverCard&gt;</code> 包裹整个 button；保留 title 做截断兜底 / 无障碍。</li>
+      <li><b>P0-4</b> · 子区 parent-strip：用 <code>parseParentGroupNo(channelId)</code>（已有）查父群 channelInfo，渲染顶条。</li>
+      <li><b>P1-1</b> · 最近一条消息预览：<code>ConversationView</code> 已经有 <code>lastMessage</code> 字段；时间走 <code>utils/time.ts</code> 的 relative format。</li>
+      <li><b>P1-2</b> · 操作面板<b>不做进 hover</b>，仍走右键 ContextMenu（与 ConversationList 一致）。</li>
+      <li><b>P2</b> · 键盘可达：Radix HoverCard 默认仅 mouse，需要为 keyboard 用户加 Tooltip fallback（VoiceOver 走 aria-label）。</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+</body>
+</html>
