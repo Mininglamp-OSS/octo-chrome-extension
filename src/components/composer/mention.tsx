@@ -5,6 +5,7 @@ import { forwardRef, type Ref, useEffect, useImperativeHandle, useRef, useState 
 import tippy, { type Instance, type Props } from "tippy.js";
 import { getApiUrl } from "@/api/client";
 import { isMemberBot, type Member } from "@/api/schemas/member";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
 import { avatarGradient, getFirstChar } from "@/utils/avatar";
@@ -118,14 +119,7 @@ const MentionList = forwardRef(function MentionList(
         >
           <MemberAvatar row={item} />
           <span className="truncate font-medium">{item.name}</span>
-          {item.isBot && (
-            <span
-              className="ml-1 inline-flex h-4 shrink-0 items-center rounded-[3px] px-1 text-[10px] font-semibold leading-none text-white"
-              style={{ background: "linear-gradient(90deg, #7B89F4 0%, #9D78F5 100%)" }}
-            >
-              AI
-            </span>
-          )}
+          {item.isBot && <AiBadge className="ml-1" />}
         </button>
       ))}
     </div>

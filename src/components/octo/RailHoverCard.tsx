@@ -1,7 +1,10 @@
 import { BellOff, ChevronRight } from "lucide-react";
 import { useChannelInfo } from "@/api/queries/channels";
+import { isChannelInfoBot } from "@/api/schemas/channel";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { parseParentGroupNo } from "@/hooks/useExpandedThreadGroups";
 import {
   channelAvatarUrl,
@@ -210,6 +213,12 @@ function ChannelHoverBody({
   logo?: string;
 }) {
   const isPrivate = channelType === ChannelType.person;
+  const botSet = useBotUidSet();
+  const { data: personInfo } = useChannelInfo(
+    isPrivate ? channelId : null,
+    ChannelType.person,
+  );
+  const isBot = isPrivate && (botSet.has(channelId) || isChannelInfoBot(personInfo));
   const avatarUrl = resolveAvatarUrl({ baseURL, channelId, channelType, spaceId, logo });
   const initials = getInitials(name);
   const fallbackBg = getTitleColor(name);
@@ -236,11 +245,14 @@ function ChannelHoverBody({
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0">
-          <div
-            className="truncate text-[14px] font-semibold leading-tight tracking-[-0.01em]"
-            title={name}
-          >
-            {name}
+          <div className="flex min-w-0 items-center gap-1.5">
+            <span
+              className="truncate text-[14px] font-semibold leading-tight tracking-[-0.01em]"
+              title={name}
+            >
+              {name}
+            </span>
+            {isBot && <AiBadge size="sm" />}
           </div>
           <div className="mt-1 flex items-center gap-1.5 text-[11px] text-(--color-muted-foreground)">
             <span className="rounded-[4px] bg-(--color-muted) px-1.5 py-px font-mono text-[10px] font-semibold text-(--color-foreground)/70">

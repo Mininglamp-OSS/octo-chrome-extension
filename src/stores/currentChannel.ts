@@ -7,9 +7,11 @@ interface CurrentChannelValue {
   channelType: number;
 }
 const STORAGE_KEY = "local:octo:extension:current-channel" as const;
-const channelItem = storage.defineItem<CurrentChannelValue>(STORAGE_KEY, {
+/** 导出供 cmdk iframe 等跨 entrypoint 复用，避免 key 字符串重复 */
+export const currentChannelItem = storage.defineItem<CurrentChannelValue>(STORAGE_KEY, {
   fallback: { channelId: null, channelType: 0 },
 });
+const channelItem = currentChannelItem;
 
 interface CurrentChannelStore {
   channelId: string | null;

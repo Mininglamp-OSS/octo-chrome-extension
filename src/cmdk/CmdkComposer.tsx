@@ -31,8 +31,8 @@ export interface CmdkComposerHandle {
   addFiles: (files: File[]) => void;
 }
 
-const PLACEHOLDER_HAS_TARGET = "输入消息  ·  回车发送  ·  Shift+回车换行";
-const PLACEHOLDER_NO_TARGET = "先选择目标";
+const PLACEHOLDER_HAS_TARGET = "";
+const PLACEHOLDER_NO_TARGET = "";
 const SENT_CLOSE_DELAY = 200;
 
 export const CmdkComposer = forwardRef<CmdkComposerHandle, CmdkComposerProps>(
@@ -50,7 +50,7 @@ export const CmdkComposer = forwardRef<CmdkComposerHandle, CmdkComposerProps>(
     const hasQuote = Boolean(ctx.pageUrl || ctx.selectedText);
     const headerSlot = hasQuote ? (
       <div className="mb-2">
-        <CmdkQuoteBlock ctx={ctx} app={app} />
+        <CmdkQuoteBlock ctx={ctx} app={app} compact />
       </div>
     ) : null;
 

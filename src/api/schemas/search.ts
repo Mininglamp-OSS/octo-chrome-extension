@@ -7,6 +7,7 @@ function stripMark(s: string | undefined): string {
 }
 
 // 后端字段兼容：联系人可能返 uid/name 也可能返 channel_id/channel_name/channel_remark（mirror 风格）
+// AI 识别：透传 category / robot / bot_type 三个可能来源，前端按任一命中判定
 export const SearchContactSchema = z
   .object({
     uid: z.string().optional(),
@@ -15,11 +16,18 @@ export const SearchContactSchema = z
     channel_name: z.string().optional(),
     channel_remark: z.string().optional(),
     avatar: z.string().optional(),
+    category: z.string().optional(),
+    robot: z.number().optional(),
+    bot_type: z.number().optional(),
   })
   .transform((v) => ({
     uid: v.uid ?? v.channel_id ?? "",
     name: stripMark(v.channel_remark || v.channel_name || v.name),
     avatar: v.avatar,
+    isBot:
+      v.category === "bot" ||
+      v.robot === 1 ||
+      (typeof v.bot_type === "number" && v.bot_type > 0),
   }));
 export type SearchContact = z.infer<typeof SearchContactSchema>;
 

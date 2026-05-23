@@ -1,6 +1,8 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getApiUrl } from "@/api/client";
+import { useChannelInfo } from "@/api/queries/channels";
+import { isChannelInfoBot } from "@/api/schemas/channel";
 import { useSpaceMembers } from "@/api/queries/spaces";
 import {
   CmdkChannelPicker,
@@ -15,8 +17,14 @@ import { useDraggable } from "@/cmdk/useDraggable";
 import { ChannelType } from "@/const/channel";
 import { cmdkLastTargetStorage } from "@/platform/storage";
 import { selectIsLogined, useAuthStore } from "@/stores/auth";
+import { currentChannelItem } from "@/stores/currentChannel";
 import { useSpaceStore } from "@/stores/space";
-import { resolveImageURL, stripSpacePrefix } from "@/utils/avatar";
+import {
+  channelAvatarUrl,
+  resolveImageURL,
+  resolvePersonAvatar,
+  stripSpacePrefix,
+} from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 
 const READY_MSG = "CMDK_READY";
@@ -103,6 +111,81 @@ function CmdkAppAuthed() {
     }
   }, [picked, memberAvatarByUid, spaceId]);
 
+  // ── 默认 target 三段 fallback：侧栏当前会话 > 上次发送对象 > 空 ──
+  // 复用 currentChannelItem（sidepanel 写入的会话 storage），cmdk iframe 读取并
+  // 通过 useChannelInfo 拿到真名/头像后落到 picked。lastTarget 自带 name/avatar
+  // 直接用即可。两者都没有 → 留空（"先选择目标"）。
+  const [defaultCh, setDefaultCh] = useState<{ channelId: string; channelType: number } | null>(
+    null,
+  );
+  const [lastTarget, setLastTarget] = useState<PickedTarget | null>(null);
+  const [defaultInited, setDefaultInited] = useState(false);
+  const [defaultResolved, setDefaultResolved] = useState(false);
+
+  const { data: defaultInfo, isError: defaultInfoError } = useChannelInfo(
+    defaultCh?.channelId ?? null,
+    defaultCh?.channelType ?? 0,
+  );
+
+  useEffect(() => {
+    void Promise.all([
+      currentChannelItem.getValue(),
+      cmdkLastTargetStorage.getValue(),
+    ]).then(([curr, last]) => {
+      if (curr?.channelId) {
+        setDefaultCh({ channelId: curr.channelId, channelType: curr.channelType });
+      }
+      if (last) setLastTarget(last);
+      setDefaultInited(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (defaultResolved || !defaultInited) return;
+    // 1) 侧栏当前会话：等 channelInfo 拉到才能拿到真名
+    if (defaultCh) {
+      if (defaultInfo) {
+        const baseURL = getApiUrl();
+        const name =
+          defaultInfo.remark?.trim() || defaultInfo.name?.trim() || defaultCh.channelId;
+        let avatar: string | undefined;
+        if (defaultCh.channelType === ChannelType.person) {
+          const logo = defaultInfo.logo?.trim() || defaultInfo.avatar?.trim();
+          avatar = resolvePersonAvatar({
+            baseURL,
+            channelId: defaultCh.channelId,
+            spaceId,
+            ...(logo && { logo }),
+          });
+        } else {
+          const logo = defaultInfo.logo?.trim() || defaultInfo.avatar?.trim();
+          avatar = logo
+            ? resolveImageURL(baseURL, logo)
+            : channelAvatarUrl(baseURL, defaultCh.channelId, defaultCh.channelType, spaceId);
+        }
+        setPicked({
+          channelId: defaultCh.channelId,
+          channelType: defaultCh.channelType,
+          name,
+          avatar,
+          isBot:
+            defaultCh.channelType === ChannelType.person && isChannelInfoBot(defaultInfo),
+        });
+        setDefaultResolved(true);
+        return;
+      }
+      if (defaultInfoError) {
+        // channelInfo 拉不到 → 降级到 lastTarget
+        if (lastTarget) setPicked(lastTarget);
+        setDefaultResolved(true);
+      }
+      return; // 还在 loading
+    }
+    // 2) 没有 currentChannel → fallback lastTarget
+    if (lastTarget) setPicked(lastTarget);
+    setDefaultResolved(true);
+  }, [defaultResolved, defaultInited, defaultCh, defaultInfo, defaultInfoError, lastTarget, spaceId]);
+
   const longSel = ctx.selectedText.length > LONG_QUOTE_THRESHOLD;
 
   // 1) 接收 parent 的初始 context；2) 通知 parent 就绪
@@ -116,12 +199,6 @@ function CmdkAppAuthed() {
     window.addEventListener("message", onMessage);
     window.parent?.postMessage({ type: READY_MSG }, "*");
     return () => window.removeEventListener("message", onMessage);
-  }, []);
-
-  useEffect(() => {
-    void cmdkLastTargetStorage.getValue().then((t) => {
-      if (t) setPicked(t);
-    });
   }, []);
 
   function close(): void {
@@ -177,15 +254,17 @@ function CmdkAppAuthed() {
         onDrop={handleDrop}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <CmdkTopBar
-          target={picked}
-          onPickTarget={() => setPickerOpen((v) => !v)}
-          onClose={close}
-          dragHandlers={drag.handlers}
-          dragging={drag.dragging}
-        />
-
         <div className="shrink-0">
+          <CmdkTopBar
+            target={picked}
+            onPickTarget={() => setPickerOpen((v) => !v)}
+            onClose={close}
+            dragHandlers={drag.handlers}
+            dragging={drag.dragging}
+          />
+        </div>
+
+        <div className="min-h-0 shrink-0">
           <CmdkComposer
             ref={composerRef}
             picked={picked}

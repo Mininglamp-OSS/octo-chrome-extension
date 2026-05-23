@@ -156,7 +156,7 @@ function getAttachmentBadge(file: File): string {
   return "FILE";
 }
 
-const DEFAULT_PLACEHOLDER = "输入消息（@ 提及成员，/ 命令）…";
+const DEFAULT_PLACEHOLDER = "";
 
 export const MessageInputCore = forwardRef<MessageInputCoreHandle, MessageInputCoreProps>(
   function MessageInputCore(

@@ -26,8 +26,10 @@ import {
   useClearUnread,
   useToggleConversationTop,
 } from "@/api/queries/channelActions";
+import { useChannelInfo } from "@/api/queries/channels";
 // /user/pinned (Rail Pin) 与会话置顶 (stick) 是两套，本文件不再使用 Rail Pin 数据
-import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
+import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   ContextMenu,
@@ -37,10 +39,8 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { ChannelType } from "@/const/channel";
-import {
-  parseParentGroupNo,
-  useExpandedThreadGroups,
-} from "@/hooks/useExpandedThreadGroups";
+import { useExpandedThreadGroups, parseParentGroupNo } from "@/hooks/useExpandedThreadGroups";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import type { ConversationView } from "@/im/conversation";
 import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { atMeKey, useAtMeStore } from "@/stores/atMe";
@@ -865,6 +865,14 @@ function ConvRowBody({
   onToggleThreads: () => void;
   dragListeners?: Record<string, unknown>;
 }) {
+  const botSet = useBotUidSet();
+  const { data: info } = useChannelInfo(
+    conv.channelType === ChannelType.person ? conv.channelId : null,
+    conv.channelType,
+  );
+  const isBot =
+    conv.channelType === ChannelType.person &&
+    (botSet.has(conv.channelId) || isChannelInfoBot(info));
   return (
     <>
       {/* 拖拽 handle —— picker 模式 + sortable 才显示。inline 占位，hover 时 opacity 1 + 接收 pointer。
@@ -919,6 +927,7 @@ function ConvRowBody({
             <span className="truncate text-[13px] font-medium text-(--color-foreground)">
               {displayName}
             </span>
+            {isBot && <AiBadge size="sm" />}
             <span className="ml-auto flex shrink-0 items-center gap-1.5">
               {hasThreads && (
                 // biome-ignore lint/a11y/useSemanticElements: 父行已是 <button>，内嵌 <button> 是无效 HTML
@@ -960,6 +969,7 @@ function ConvRowBody({
                 <Pin className="h-3 w-3 shrink-0 fill-(--color-muted-foreground) text-(--color-muted-foreground)" />
               )}
               <span className="truncate text-sm font-medium">{displayName}</span>
+              {isBot && <AiBadge size="sm" />}
               <span className="ml-auto shrink-0 text-[11px] text-(--color-muted-foreground)">
                 {conv.timestamp ? formatConversationTime(conv.timestamp * 1000) : ""}
               </span>

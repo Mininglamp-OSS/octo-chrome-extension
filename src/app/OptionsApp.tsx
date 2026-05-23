@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useLogout } from "@/api/queries/auth";
 import { DEFAULT_API_URL } from "@/api/endpoints";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useAuthStore, selectIsLogined } from "@/stores/auth";
@@ -21,6 +22,7 @@ export function OptionsApp() {
   const setTheme = usePreferencesStore((s) => s.setTheme);
 
   const [apiUrlDraft, setApiUrlDraft] = useState(prefs.apiUrl);
+  const [logoutOpen, setLogoutOpen] = useState(false);
   const logout = useLogout();
 
   async function saveApiUrl(): Promise<void> {
@@ -31,6 +33,15 @@ export function OptionsApp() {
     }
     await setPrefs({ apiUrl: trimmed });
     toast.success("API 地址已保存，下次连接时生效");
+  }
+
+  async function doLogout(): Promise<void> {
+    try {
+      await logout.mutateAsync();
+      toast.success("已退出");
+    } catch (err) {
+      toast.error(extractErrorMsg(err) || "退出失败");
+    }
   }
 
   return (
@@ -95,19 +106,22 @@ export function OptionsApp() {
           <Button
             variant="destructive"
             size="sm"
-            onClick={async () => {
-              try {
-                await logout.mutateAsync();
-                toast.success("已退出");
-              } catch (err) {
-                toast.error(extractErrorMsg(err) || "退出失败");
-              }
-            }}
+            onClick={() => setLogoutOpen(true)}
           >
             <LogOut className="mr-1 h-3.5 w-3.5" /> 退出登录
           </Button>
         </Section>
       )}
+
+      <ConfirmDialog
+        open={logoutOpen}
+        onOpenChange={setLogoutOpen}
+        title="退出登录"
+        description="确认要退出当前账号吗？"
+        confirmText="退出"
+        variant="destructive"
+        onConfirm={doLogout}
+      />
     </main>
   );
 }

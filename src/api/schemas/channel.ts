@@ -35,7 +35,25 @@ export const ChannelInfoSchema = z
     show_nick: z.number().optional(),
     save: z.number().optional(),
     category: z.string().optional(),
+    /** 1 = AI / 机器人（与 octo-web datasource 行 117-118 同源） */
+    robot: z.number().optional(),
+    /** 部分接口用此字段：>0 视为 bot */
+    bot_type: z.number().optional(),
     extra: z.record(z.string(), z.unknown()).optional(),
   })
   .loose();
 export type ChannelInfo = z.infer<typeof ChannelInfoSchema>;
+
+/**
+ * 判定一个 channelInfo 是否是 AI/机器人。规则对齐 isMemberBot：
+ *  - category === "bot"
+ *  - robot === 1
+ *  - bot_type > 0
+ */
+export function isChannelInfoBot(info: ChannelInfo | undefined): boolean {
+  if (!info) return false;
+  if (info.category === "bot") return true;
+  if (info.robot === 1) return true;
+  if (typeof info.bot_type === "number" && info.bot_type > 0) return true;
+  return false;
+}

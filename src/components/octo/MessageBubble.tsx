@@ -1,6 +1,8 @@
 import { AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useRevokeMessage } from "@/api/queries/messages";
+import { useChannelInfo } from "@/api/queries/channels";
+import { isChannelInfoBot } from "@/api/schemas/channel";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -17,9 +19,11 @@ import { TEXT_TYPE } from "@/messages/text/TextMessage";
 import { useAuthStore } from "@/stores/auth";
 import { channelKey, useReplyDraft } from "@/stores/replyDraft";
 import { useThreadStore } from "@/stores/thread";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { cn } from "@/utils/cn";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
 import { formatMessageTime } from "@/utils/time";
+import { AiBadge } from "./AiBadge";
 import { MessageAvatar } from "./MessageAvatar";
 import { MessageContentView } from "./MessageContent";
 
@@ -56,6 +60,13 @@ export function MessageBubble({
   const myUid = useAuthStore((s) => s.state?.uid);
   const myName = useAuthStore((s) => s.state?.name);
   const isSelf = myUid != null && message.fromUid === myUid;
+  const botSet = useBotUidSet();
+  const { data: senderInfo } = useChannelInfo(
+    isSelf ? null : message.fromUid,
+    ChannelType.person,
+  );
+  const isBotSender =
+    !isSelf && (botSet.has(message.fromUid) || isChannelInfoBot(senderInfo));
 
   const revoke = useRevokeMessage();
   const setDraft = useReplyDraft((s) => s.set);
@@ -179,6 +190,7 @@ export function MessageBubble({
                 <span className="octo-msg-name text-[13px] font-medium text-(--color-foreground)">
                   {name}
                 </span>
+                {isBotSender && <AiBadge size="sm" className="-mt-0.5" />}
                 <span className="octo-msg-time text-[11px] text-(--color-muted-foreground) tabular-nums">
                   {formatMessageTime(message.timestamp * 1000)}
                 </span>

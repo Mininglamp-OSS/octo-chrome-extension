@@ -1,15 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { useFriends } from "@/api/queries/contacts";
+import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
 import { type SearchResult, SearchResultSchema } from "@/api/schemas/search";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useSpaceStore } from "@/stores/space";
 import { useUIStore } from "@/stores/ui";
@@ -82,14 +85,21 @@ export function SearchPopover() {
 
   // 默认态联系人用 friend/sync 全量（mirror 风格），可滚到底；
   // 群组/文件默认态来自 /search/global（mirror 后端在空 kw 时会返默认列表）。
+  // friend.category === "bot" 直接代表 AI；搜索结果的 isBot 由后端 category/robot/bot_type 推得
   const allFriends = (friendsData ?? []).map((f) => ({
     uid: f.uid,
     name: f.remark || f.name,
     avatar: f.avatar,
+    isBot: f.category === "bot",
   }));
   const friends = isDefault
     ? allFriends
-    : (data?.friends ?? []).map((f) => ({ uid: f.uid, name: f.name, avatar: f.avatar }));
+    : (data?.friends ?? []).map((f) => ({
+        uid: f.uid,
+        name: f.name,
+        avatar: f.avatar,
+        isBot: f.isBot,
+      }));
   const groups = data?.groups ?? [];
   const files = data?.files ?? [];
   const counts: Record<Tab, number> = {
@@ -236,7 +246,7 @@ function ResultList({
   loading: boolean;
   loaded: boolean;
   keyword: string;
-  friends: { uid: string; name: string; avatar?: string }[];
+  friends: { uid: string; name: string; avatar?: string; isBot: boolean }[];
   groups: SearchResult["groups"];
   files: SearchResult["files"];
   onSelectChannel: (channelId: string, channelType: number) => void;
@@ -244,6 +254,32 @@ function ResultList({
 }) {
   const baseURL = getApiUrl();
   const spaceId = useSpaceStore((s) => s.currentSpaceId);
+  const botSet = useBotUidSet();
+
+  // contacts tab + 搜索态：对命中的 uid 拉 channelInfo（命中数已被后端 limit:20 兜底，安全）
+  // 默认态完全靠 botSet（来自 useFriends 全量 + useMyBots，已涵盖本地全部 AI），
+  // 不再对几千条 friends 发请求 → 修复"点搜索按钮就崩"的请求洪峰
+  const isSearchingContacts = tab === "contacts" && keyword.trim() !== "";
+  const contactUids = isSearchingContacts ? friends.map((f) => f.uid).slice(0, 30) : [];
+  const contactInfoQueries = useQueries({
+    queries: contactUids.map((uid) => ({
+      queryKey: ["channel", ChannelType.person, uid] as const,
+      enabled: Boolean(uid),
+      staleTime: 5 * 60_000,
+      async queryFn(): Promise<ChannelInfo> {
+        const data = await api.get(Endpoints.channelInfo(uid, ChannelType.person)).json();
+        return ChannelInfoSchema.parse(data);
+      },
+    })),
+  });
+  const channelBotSet = useMemo(() => {
+    const set = new Set<string>();
+    contactUids.forEach((uid, i) => {
+      if (isChannelInfoBot(contactInfoQueries[i]?.data)) set.add(uid);
+    });
+    return set;
+  }, [contactUids, contactInfoQueries]);
+
   const items =
     tab === "contacts"
       ? friends.map((c) => ({
@@ -256,6 +292,7 @@ function ResultList({
             spaceId,
             ...(c.avatar?.trim() && { logo: c.avatar.trim() }),
           }),
+          isBot: c.isBot || botSet.has(c.uid) || channelBotSet.has(c.uid),
           onClick: () => onSelectChannel(c.uid, ChannelType.person),
         }))
       : tab === "groups"
@@ -265,6 +302,7 @@ function ResultList({
             sub: g.member_count ? `${g.member_count} 人` : "",
             // group / topic 头像直接走 channelAvatarUrl（与 Rail/ConversationList 一致）
             avatar: channelAvatarUrl(baseURL, g.channel_id, g.channel_type),
+            isBot: false,
             onClick: () => onSelectChannel(g.channel_id, g.channel_type),
           }))
         : files.map((f) => ({
@@ -272,6 +310,7 @@ function ResultList({
             name: f.name || "文件",
             sub: typeof f.size === "number" ? formatBytes(f.size) : "",
             avatar: undefined as string | undefined,
+            isBot: false,
             onClick: () => onOpenFile(f),
           }));
 
@@ -293,6 +332,7 @@ function VirtualList({
     name: string;
     sub: string;
     avatar: string | undefined;
+    isBot: boolean;
     onClick: () => void;
   }>;
 }) {
@@ -333,8 +373,11 @@ function VirtualList({
                 </AvatarFallback>
               </Avatar>
               <div className="flex min-w-0 flex-1 flex-col">
-                <div className="truncate text-[13px] font-medium text-(--color-foreground)">
-                  {it.name}
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[13px] font-medium text-(--color-foreground)">
+                    {it.name}
+                  </span>
+                  {it.isBot && <AiBadge size="sm" />}
                 </div>
                 {it.sub && (
                   <div className="truncate text-[11.5px] text-(--color-muted-foreground)">

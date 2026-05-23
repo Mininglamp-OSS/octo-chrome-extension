@@ -2,6 +2,7 @@ import { Bell, BellOff, Pin, PinOff, Edit2, Trash2, LogOut, Check } from "lucide
 import { useState } from "react";
 import { toast } from "sonner";
 import { useChannelInfo } from "@/api/queries/channels";
+import { isChannelInfoBot } from "@/api/schemas/channel";
 import {
   useClearChannelMessages,
   useExitGroup,
@@ -10,6 +11,7 @@ import {
 } from "@/api/queries/channelActions";
 import { useChannelMembers } from "@/api/queries/members";
 import { useAddPinned, usePinned, useRemovePinned } from "@/api/queries/pinned";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,7 @@ import {
 } from "@/components/ui/sheet";
 import { getApiUrl } from "@/api/url";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useDrawerStore } from "@/stores/drawer";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
@@ -46,6 +49,9 @@ export function OctoInfoDrawer() {
 
   const { data: info } = useChannelInfo(channelId, channelType);
   const isGroup = channelType !== ChannelType.person;
+  const botSet = useBotUidSet();
+  const isBotChannel =
+    !isGroup && !!channelId && (botSet.has(channelId) || isChannelInfoBot(info));
   const { data: members } = useChannelMembers({
     channelId: isGroup ? channelId : null,
     limit: 200,
@@ -180,6 +186,7 @@ export function OctoInfoDrawer() {
             ) : (
               <div className="flex items-center gap-1">
                 <span className="text-sm font-medium">{info?.name ?? channelId}</span>
+                {isBotChannel && <AiBadge size="sm" />}
                 {isGroup && (
                   <Button
                     variant="ghost"

@@ -5,9 +5,11 @@ import { api, getApiUrl } from "@/api/client";
 import { Endpoints } from "@/api/endpoints";
 import { useCategories } from "@/api/queries/categories";
 import { useFriends } from "@/api/queries/contacts";
-import { type ChannelInfo, ChannelInfoSchema } from "@/api/schemas/channel";
+import { type ChannelInfo, ChannelInfoSchema, isChannelInfoBot } from "@/api/schemas/channel";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { useConversationViews } from "@/im/hooks/useConversationViews";
 import { useSpaceStore } from "@/stores/space";
 import {
@@ -23,6 +25,8 @@ export interface PickedTarget {
   channelType: number;
   name: string;
   avatar?: string;
+  /** 该 target 是 AI / 机器人（render 时显示 AI 徽章） */
+  isBot?: boolean;
 }
 
 interface PickerRow {
@@ -94,6 +98,7 @@ export function CmdkChannelPicker({
   const { conversations } = useConversationViews();
   const { data: categories } = useCategories(spaceId);
   const { data: friends } = useFriends();
+  const botSet = useBotUidSet();
 
   // 给最近会话拉 channelInfo（解决真名 / logo）
   const recentInfoQueries = useQueries({
@@ -136,14 +141,18 @@ export function CmdkChannelPicker({
           ? resolveImageURL(baseURL, logoFromInfo)
           : channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
       }
+      const isBot =
+        c.channelType === ChannelType.person &&
+        (botSet.has(c.channelId) || isChannelInfoBot(info));
       return {
         channelId: c.channelId,
         channelType: c.channelType,
         name,
         avatar,
+        isBot,
       };
     });
-  }, [conversations, recentInfoQueries, spaceId]);
+  }, [conversations, recentInfoQueries, spaceId, botSet]);
 
   // 2) 联系人：useFriends 全 space
   const friendTargets = useMemo<PickedTarget[]>(() => {
@@ -161,9 +170,10 @@ export function CmdkChannelPicker({
         channelType: ChannelType.person,
         name,
         avatar,
+        isBot: botSet.has(f.uid),
       };
     });
-  }, [friends, spaceId]);
+  }, [friends, spaceId, botSet]);
 
   // 3) 频道：useCategories.groups 全 space
   const groupTargets = useMemo<PickedTarget[]>(() => {
@@ -362,6 +372,7 @@ export function CmdkChannelPicker({
               <span className="min-w-0 flex-1 truncate text-[13px]">
                 {highlight(r.target.name, keyword)}
               </span>
+              {r.target.isBot && <AiBadge size="sm" />}
               {isCurrent && (
                 <span className="shrink-0 rounded bg-(--color-primary)/12 px-1.5 py-0.5 text-[10px] font-medium text-(--color-primary)">
                   当前

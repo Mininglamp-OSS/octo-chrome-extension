@@ -3,6 +3,7 @@ import { getApiUrl } from "@/api/client";
 import { useMyBots } from "@/api/queries/contacts";
 import { useSpaceMembers } from "@/api/queries/spaces";
 import type { SpaceMember } from "@/api/schemas/space";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { ChannelType } from "@/const/channel";
 import { useBotAvatarMap } from "@/hooks/useBotAvatarMap";
 import { useAuthStore } from "@/stores/auth";
@@ -222,7 +223,7 @@ function Row({
       <div className="cd-txt">
         <span className="cd-nm">
           {member.name}
-          {ai && <span className="cd-badge-ai">Agent</span>}
+          {ai && <AiBadge className="ml-1.5" size="sm" />}
         </span>
       </div>
       {!ai && (

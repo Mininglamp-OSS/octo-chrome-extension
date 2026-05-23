@@ -1,6 +1,8 @@
 import { ChevronDown, X } from "lucide-react";
+import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { avatarGradient, getFirstChar } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import type { PickedTarget } from "./CmdkChannelPicker";
@@ -29,6 +31,11 @@ export function CmdkTopBar({
   dragHandlers,
   dragging,
 }: CmdkTopBarProps) {
+  const botSet = useBotUidSet();
+  const isBot =
+    target != null &&
+    target.channelType === ChannelType.person &&
+    (target.isBot === true || botSet.has(target.channelId));
   return (
     <div
       onPointerDown={dragHandlers.onPointerDown}
@@ -78,6 +85,7 @@ export function CmdkTopBar({
                 </AvatarFallback>
               </Avatar>
               <span className="max-w-[160px] truncate">{target.name}</span>
+              {isBot && <AiBadge size="sm" />}
               <span className="rounded-full bg-(--color-background)/70 px-1.5 py-0.5 text-[10px] font-medium text-(--color-muted-foreground)">
                 {typeLabel(target.channelType)}
               </span>
