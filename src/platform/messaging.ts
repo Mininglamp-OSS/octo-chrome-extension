@@ -67,6 +67,13 @@ export interface OctoProtocolMap {
     channelId: string;
     channelType: number;
   }): void;
+  /**
+   * 通用 @我 bump —— offscreen 或 sidepanel 检测到 mention 自己时调用，
+   * background 把计数累加到 atMeCountsStorage，供下次 sidepanel hydrate
+   */
+  atMeBump(payload: { channelId: string; channelType: number }): void;
+  /** sidepanel 进入会话时清掉该会话的 @ 计数（同时清 storage） */
+  atMeClear(payload: { channelId: string; channelType: number }): void;
 
   /* ===== Sidepanel → Background 协同 ===== */
   /** sidepanel 周期性心跳，5s TTL 内 background 暂停 offscreen 弹窗避免重复 */

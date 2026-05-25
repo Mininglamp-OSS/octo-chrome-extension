@@ -53,6 +53,16 @@ export const pendingConversationStorage = storage.defineItem<PendingConversation
   { fallback: null },
 );
 
+/**
+ * @我 计数持久化（key = `${channelId}:${channelType}`，与 atMeKey 一致）。
+ * offscreen 期间收到 @ 时由 background 写入；sidepanel 启动时 hydrate 进内存 store；
+ * 用户进入对应会话时清掉。脱离服务端 reminder，覆盖 person/group/子区全部场景。
+ */
+export const atMeCountsStorage = storage.defineItem<Record<string, number>>(
+  "local:octo:extension:atme-counts",
+  { fallback: {} },
+);
+
 export const preferencesStorage = storage.defineItem<Preferences>(
   "sync:octo:extension:preferences",
   { fallback: DEFAULT_PREFERENCES },

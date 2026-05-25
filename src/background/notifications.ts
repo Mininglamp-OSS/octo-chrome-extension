@@ -1,7 +1,8 @@
 import { browser } from "wxt/browser";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { clearAllNotifications, notify } from "@/platform/notifications";
-import { authStorage, preferencesStorage } from "@/platform/storage";
+import { openSidePanel } from "@/platform/sidePanel";
+import { authStorage, pendingConversationStorage, preferencesStorage } from "@/platform/storage";
 import { setUnreadBadge } from "./badge";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen";
 
@@ -130,13 +131,21 @@ export function setupNotifications(): void {
   });
 
   // ===== 通知点击交互 =====
+  // 关键：onClicked 是 user-gesture context，必须**同步**调 sidePanel.open，
+  // 不能绕 sendMessage → handler → openSidePanel（异步链丢手势）。
+  // 链路对齐 mirror background.ts:351-372：写 pending → sp.open → 广播。
   browser.notifications.onClicked.addListener((id: string) => {
     const target = notifMap.get(id);
     notifMap.delete(id);
     if (!target) return;
     void browser.notifications.clear(id);
-    void sendMessage("requestOpenSidePanel", {}).catch(() => {});
-    void sendMessage("requestOpenConversation", target).catch(() => {});
+
+    // 1) 持久化 pending：sidepanel cold start 时启动后轮询消费（useSidepanelBridge）
+    void pendingConversationStorage.setValue(target);
+    // 2) 同步 fire sidePanel.open()，保住 user gesture
+    void openSidePanel().catch(() => {});
+    // 3) 已经热的 sidepanel 立即响应（无需等 storage round-trip）
+    void sendMessage("openConversation", target).catch(() => {});
   });
 
   browser.notifications.onClosed.addListener((id: string) => {

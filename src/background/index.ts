@@ -1,3 +1,4 @@
+import { setupAtMe } from "./atMe";
 import { setupAuthSync } from "./auth-sync";
 import { setupBadge } from "./badge";
 import { setupHandlers } from "./handlers";
@@ -12,4 +13,5 @@ export function setupBackground(): void {
   setupOffscreen();
   setupBadge();
   setupNotifications();
+  setupAtMe();
 }

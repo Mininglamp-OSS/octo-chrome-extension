@@ -6,6 +6,8 @@ interface AtMeStore {
   bump: (channelKey: string) => void;
   clear: (channelKey: string) => void;
   get: (channelKey: string) => number;
+  /** 从 storage 全量替换内存 map —— 用于 sidepanel mount 时 hydrate 与 storage watch */
+  hydrate: (next: Map<string, number>) => void;
 }
 
 export const useAtMeStore = create<AtMeStore>((set, store) => ({
@@ -21,6 +23,21 @@ export const useAtMeStore = create<AtMeStore>((set, store) => ({
   },
   get(channelKey) {
     return store().counts.get(channelKey) ?? 0;
+  },
+  hydrate(next) {
+    // 直接替换；若内容与当前完全相同则跳过 set 避免无谓 rerender
+    const cur = store().counts;
+    if (cur.size === next.size) {
+      let same = true;
+      for (const [k, v] of next) {
+        if (cur.get(k) !== v) {
+          same = false;
+          break;
+        }
+      }
+      if (same) return;
+    }
+    set({ counts: new Map(next) });
   },
 }));
 

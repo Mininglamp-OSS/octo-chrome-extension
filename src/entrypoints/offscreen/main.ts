@@ -211,6 +211,22 @@ async function buildNotificationPayload(m: Message): Promise<{
   };
 }
 
+/**
+ * 检测一条消息是否在 @ 当前用户（与 sidepanel 的 useAtMeWatcher 同公式）：
+ * 模块声明 mentionable + 消息 data.mentionUids 含 currentUid。
+ */
+function isMentioningMe(m: Message): boolean {
+  if (!currentUid || m.fromUID === currentUid) return false;
+  const mod = getModuleOrUnknown(m.contentType);
+  if (!mod.mentionable) return false;
+  try {
+    const ui = mod.toUI(m.content as never) as { mentionUids?: string[] };
+    return !!ui.mentionUids?.includes(currentUid);
+  } catch {
+    return false;
+  }
+}
+
 function setupListeners(): void {
   sdk.chatManager.addMessageListener((m: Message) => {
     void buildNotificationPayload(m).then((payload) => {
@@ -218,6 +234,12 @@ function setupListeners(): void {
         void sendMessage("offscreenNewMessage", payload).catch(() => {});
       }
     });
+    if (isMentioningMe(m)) {
+      void sendMessage("atMeBump", {
+        channelId: m.channel.channelID,
+        channelType: m.channel.channelType,
+      }).catch(() => {});
+    }
     scheduleSync();
   });
 

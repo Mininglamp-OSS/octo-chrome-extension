@@ -48,16 +48,42 @@ export function useSidepanelBridge(): void {
     return off;
   }, [select]);
 
-  // 启动时消费 pending
+  // 启动消费 pending —— 30s 内每 1s 轮询，解决 background 写 storage 与
+  // sidepanel cold start 读 storage 的竞态（mirror sidepanel/main.tsx:75-115 同款）。
+  // 已经热的 sidepanel 走 openConversation 广播分支立即响应，这里只是兜底。
   useEffect(() => {
     let cancelled = false;
-    void pendingConversationStorage.getValue().then(async (pending) => {
-      if (cancelled || !pending) return;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const deadline = Date.now() + 30_000;
+    const tryConsume = async (): Promise<boolean> => {
+      if (cancelled) return true;
+      const pending = await pendingConversationStorage.getValue();
+      if (!pending) return false;
       select(pending.channelId, pending.channelType);
       await pendingConversationStorage.setValue(null);
+      return true;
+    };
+    const stop = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    void tryConsume().then((done) => {
+      if (done || cancelled) return;
+      timer = setInterval(() => {
+        if (cancelled || Date.now() > deadline) {
+          stop();
+          return;
+        }
+        void tryConsume().then((d) => {
+          if (d) stop();
+        });
+      }, 1_000);
     });
     return () => {
       cancelled = true;
+      stop();
     };
   }, [select]);
 
