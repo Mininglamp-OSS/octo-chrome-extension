@@ -5,13 +5,9 @@ import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
 import { useBotUidSet } from "@/hooks/useBotUidSet";
+import { useChannelAvatarTag } from "@/hooks/useChannelAvatarTag";
 import { parseParentGroupNo } from "@/hooks/useExpandedThreadGroups";
-import {
-  channelAvatarUrl,
-  getInitials,
-  resolveImageURL,
-  resolvePersonAvatar,
-} from "@/utils/avatar";
+import { channelAvatarUrl, getInitials, resolveLogoUrl, resolvePersonAvatar } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { getThreadHueColor, getTitleColor } from "@/utils/titleColor";
 
@@ -101,8 +97,10 @@ function ThreadHoverBody({
   const parentQuery = useChannelInfo(parentGroupNo, ChannelType.group);
   const parentInfo = parentQuery.data;
   const parentName = parentInfo?.remark?.trim() || parentInfo?.name?.trim() || parentGroupNo || "";
+  // hook 必须在 conditional 之外；parentGroupNo 为空时传空 string，getEffectiveAvatarTag 兼容
+  const parentTag = useChannelAvatarTag(parentGroupNo ?? "", ChannelType.group);
   const parentAvatarUrl = parentGroupNo
-    ? channelAvatarUrl(baseURL, parentGroupNo, ChannelType.group, spaceId)
+    ? channelAvatarUrl(baseURL, parentGroupNo, ChannelType.group, spaceId, parentTag)
     : "";
 
   const hue = getThreadHueColor(name);
@@ -214,12 +212,17 @@ function ChannelHoverBody({
 }) {
   const isPrivate = channelType === ChannelType.person;
   const botSet = useBotUidSet();
-  const { data: personInfo } = useChannelInfo(
-    isPrivate ? channelId : null,
-    ChannelType.person,
-  );
+  const { data: personInfo } = useChannelInfo(isPrivate ? channelId : null, ChannelType.person);
   const isBot = isPrivate && (botSet.has(channelId) || isChannelInfoBot(personInfo));
-  const avatarUrl = resolveAvatarUrl({ baseURL, channelId, channelType, spaceId, logo });
+  const avatarTag = useChannelAvatarTag(channelId, channelType);
+  const avatarUrl = resolveAvatarUrl({
+    baseURL,
+    channelId,
+    channelType,
+    spaceId,
+    logo,
+    cacheTag: avatarTag,
+  });
   const initials = getInitials(name);
   const fallbackBg = getTitleColor(name);
   const kindLabel = isPrivate ? "私聊" : "群聊";
@@ -289,8 +292,9 @@ function resolveAvatarUrl(opts: {
   channelType: number;
   spaceId: string | null;
   logo?: string;
+  cacheTag?: string;
 }): string {
-  const { baseURL, channelId, channelType, spaceId, logo } = opts;
+  const { baseURL, channelId, channelType, spaceId, logo, cacheTag } = opts;
   if (!baseURL || !channelId) return "";
   if (channelType === ChannelType.person || channelType === ChannelType.customerService) {
     const cleanLogo = logo?.trim();
@@ -299,9 +303,19 @@ function resolveAvatarUrl(opts: {
       channelId,
       spaceId,
       ...(cleanLogo && { logo: cleanLogo }),
+      ...(cacheTag && { cacheTag }),
     });
   }
+  // group：channelInfo.logo 优先，但必须带 ?v=tag cache buster，否则 sidepanel
+  // 重开后浏览器仍命中旧 disk cache。
   const cleanLogo = logo?.trim();
-  if (cleanLogo) return resolveImageURL(baseURL, cleanLogo);
-  return channelAvatarUrl(baseURL, channelId, channelType, spaceId);
+  if (cleanLogo)
+    return resolveLogoUrl({
+      baseURL,
+      channelId,
+      channelType,
+      logo: cleanLogo,
+      ...(cacheTag && { cacheTag }),
+    });
+  return channelAvatarUrl(baseURL, channelId, channelType, spaceId, cacheTag);
 }

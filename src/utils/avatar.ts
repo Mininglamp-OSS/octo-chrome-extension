@@ -79,13 +79,12 @@ export function avatarGradient(name: string): string {
   return `linear-gradient(135deg, hsl(${h1},65%,55%), hsl(${h2},65%,45%))`;
 }
 
-/** thread channelId 形如 `t{groupNo}_{topicId}`，提取父群 groupNo */
+/** thread channelId 形如 `{parentGroupNo}____{shortId}`（mirror Thread.parseThreadChannelId 同款），
+ *  分隔符是 4 个下划线。提取父群 groupNo。 */
 function parseThreadParentGroup(channelId: string): string | null {
-  if (!channelId.startsWith("t")) return null;
-  const rest = channelId.slice(1);
-  const idx = rest.indexOf("_");
+  const idx = channelId.indexOf("____");
   if (idx <= 0) return null;
-  return rest.slice(0, idx);
+  return channelId.slice(0, idx);
 }
 
 /** mirror commonDataSource.getImageURL 等价：相对路径 prepend baseURL；data:/http(s)://直通 */
@@ -112,6 +111,28 @@ export function stripSpacePrefix(channelId: string, spaceId?: string | null): st
 }
 
 const avatarTags = new Map<string, string>();
+
+/**
+ * tag 变化订阅器。bumpAvatarTag / storage watch 触发时通知所有 listener，
+ * useChannelAvatarTag hook 通过 useSyncExternalStore 订阅，让头像组件在
+ * tag 变化时自动 re-render —— 不依赖外层 query 的 invalidate 链路。
+ */
+const tagListeners = new Set<() => void>();
+function notifyTagListeners(): void {
+  for (const l of tagListeners) {
+    try {
+      l();
+    } catch (err) {
+      console.warn("[octo:avatar] tag listener threw", err);
+    }
+  }
+}
+export function subscribeAvatarTagChanges(listener: () => void): () => void {
+  tagListeners.add(listener);
+  return () => {
+    tagListeners.delete(listener);
+  };
+}
 
 /**
  * Tags 持久化到 wxt storage，跨刷新保留。
@@ -177,6 +198,8 @@ export function subscribeAvatarTags(): () => void {
       // 直接 replace：以最新 storage 为准（已包含本端写入，因为本端写后 storage 会广播回来）
       avatarTags.clear();
       for (const [k, v] of Object.entries(next)) avatarTags.set(k, v);
+      // 跨 entrypoint 同步：通知本端 hook 订阅者重新读 tag
+      notifyTagListeners();
     });
   } catch {
     return () => {};
@@ -203,6 +226,41 @@ function getDefaultAvatarTag(channelId: string, channelType: number): string {
   return SESSION_TAG;
 }
 
+/**
+ * 子区 channel 的头像 tag 应该按父群算 —— 父群头像变更时父群被 bump，子区头像也得跟着新。
+ * 暴露给 useChannelAvatarTag hook 用，避免组件层重复处理这个映射。
+ */
+export function getEffectiveAvatarTag(channelId: string, channelType: number): string {
+  if (channelType === ChannelType.communityTopic) {
+    const parent = parseThreadParentGroup(channelId);
+    if (parent) return getDefaultAvatarTag(parent, ChannelType.group);
+  }
+  return getDefaultAvatarTag(channelId, channelType);
+}
+
+/**
+ * 给一个 channelInfo.logo 路径补上 ?v=tag cache buster，让浏览器跨 sidepanel 重开
+ * 必然 disk-cache miss，拉到最新头像。
+ * - logo 已带 `?` 时用 `&v=`，否则 `?v=`
+ * - 自带 cacheTag 时直接用；不传则取 (channelId, channelType) 的默认 tag
+ *   （SESSION_TAG 或 bumpAvatarTag 主动写入的 per-channel tag）
+ * - data: / http(s): / blob: 等 absolute URL 直接返回（与 resolveImageURL 一致）
+ */
+export function resolveLogoUrl(opts: {
+  baseURL: string;
+  channelId: string;
+  channelType: number;
+  logo: string;
+  cacheTag?: string;
+}): string {
+  const { baseURL, channelId, channelType, logo, cacheTag } = opts;
+  if (!logo) return "";
+  if (/^(https?:|data:|blob:)/i.test(logo)) return logo;
+  const tag = cacheTag ?? getDefaultAvatarTag(channelId, channelType);
+  const sep = logo.includes("?") ? "&" : "?";
+  return resolveImageURL(baseURL, `${logo}${sep}v=${tag}`);
+}
+
 /** 主动 invalidate 一个头像 tag（用户改了头像、上传新 logo 时调）。 */
 export function bumpAvatarTag(channelId: string, channelType: number): void {
   const key = `${channelType}:${channelId}`;
@@ -210,16 +268,18 @@ export function bumpAvatarTag(channelId: string, channelType: number): void {
   avatarTags.set(key, now.toString());
   tagsDirty = true;
   scheduleTagsFlush();
+  notifyTagListeners();
 }
 
 /**
  * mirror App.avatarChannel 等价：按 channel 类型拼后端约定的头像 URL。
  * - person: `{api}users/{uid}/avatar`；channelId 形如 `s{spaceId}_{uid}` 时剥前缀
  * - group: `{api}groups/{groupNo}/avatar`
- * - communityTopic (子区): 走父群头像
+ * - communityTopic (子区): 走父群 URL，且 cacheTag 显式取父群 (parent, group) 的，
+ *   让 bumpAvatarTag(parent, group) 自动作用到所有子区，避免父群头像更新后子区 stale。
  *
  * baseURL 必须以 `/` 结尾。加 v= cache buster 让头像刷新；
- * 如果 channelInfo.logo 有值，调用方应优先用 logo。
+ * 如果 channelInfo.logo 有值，调用方应优先用 logo（仅 person/group；子区 logo 是 stale 副本，应忽略）。
  */
 export function channelAvatarUrl(
   baseURL: string,
@@ -229,18 +289,23 @@ export function channelAvatarUrl(
   cacheTag?: string,
 ): string {
   if (!channelId || !baseURL) return "";
-  const tag = cacheTag ?? getDefaultAvatarTag(channelId, channelType);
 
   if (channelType === ChannelType.person || channelType === ChannelType.customerService) {
+    const tag = cacheTag ?? getDefaultAvatarTag(channelId, channelType);
     const uid = stripSpacePrefix(channelId, spaceId);
     return `${baseURL}users/${uid}/avatar?v=${tag}`;
   }
   if (channelType === ChannelType.group) {
+    const tag = cacheTag ?? getDefaultAvatarTag(channelId, channelType);
     return `${baseURL}groups/${channelId}/avatar?v=${tag}`;
   }
   if (channelType === ChannelType.communityTopic) {
     const parent = parseThreadParentGroup(channelId);
-    if (parent) return `${baseURL}groups/${parent}/avatar?v=${tag}`;
+    if (parent) {
+      // 关键：cacheTag 默认按父群算，否则父群 bumpAvatarTag 后子区 ?v= 不变 → 浏览器仍命中旧头像
+      const tag = cacheTag ?? getDefaultAvatarTag(parent, ChannelType.group);
+      return `${baseURL}groups/${parent}/avatar?v=${tag}`;
+    }
   }
   return "";
 }
@@ -260,14 +325,15 @@ export function resolvePersonAvatar(opts: {
 }): string {
   const { baseURL, channelId, spaceId, logo, cacheTag } = opts;
   if (!channelId || !baseURL) return "";
-  const tag = cacheTag ?? getDefaultAvatarTag(channelId, ChannelType.person);
-
   const fromLogo = logo?.trim();
   if (fromLogo) {
-    // mirror App.avatarChannel 等价：logo 已带 `?` 用 `&v=`，否则 `?v=`
-    const sep = fromLogo.includes("?") ? "&" : "?";
-    return resolveImageURL(baseURL, `${fromLogo}${sep}v=${tag}`);
+    return resolveLogoUrl({
+      baseURL,
+      channelId,
+      channelType: ChannelType.person,
+      logo: fromLogo,
+      ...(cacheTag && { cacheTag }),
+    });
   }
-
-  return channelAvatarUrl(baseURL, channelId, ChannelType.person, spaceId, tag);
+  return channelAvatarUrl(baseURL, channelId, ChannelType.person, spaceId, cacheTag);
 }

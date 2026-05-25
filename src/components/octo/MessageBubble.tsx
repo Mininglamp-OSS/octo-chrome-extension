@@ -1,7 +1,7 @@
 import { AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { useRevokeMessage } from "@/api/queries/messages";
 import { useChannelInfo } from "@/api/queries/channels";
+import { useRevokeMessage } from "@/api/queries/messages";
 import { isChannelInfoBot } from "@/api/schemas/channel";
 import {
   ContextMenu,
@@ -11,7 +11,9 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { ChannelType } from "@/const/channel";
+import { useBotUidSet } from "@/hooks/useBotUidSet";
 import type { MessageView } from "@/im/message";
+import { reasonCodeToMessage } from "@/im/sendError";
 import { buildThreadChannelId, isThreadChannelId } from "@/im/thread";
 import type { MessageRenderCtx } from "@/messages/core/defineMessageType";
 import { getModuleOrUnknown } from "@/messages/core/registry";
@@ -19,7 +21,6 @@ import { TEXT_TYPE } from "@/messages/text/TextMessage";
 import { useAuthStore } from "@/stores/auth";
 import { channelKey, useReplyDraft } from "@/stores/replyDraft";
 import { useThreadStore } from "@/stores/thread";
-import { useBotUidSet } from "@/hooks/useBotUidSet";
 import { cn } from "@/utils/cn";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
 import { formatMessageTime } from "@/utils/time";
@@ -61,12 +62,8 @@ export function MessageBubble({
   const myName = useAuthStore((s) => s.state?.name);
   const isSelf = myUid != null && message.fromUid === myUid;
   const botSet = useBotUidSet();
-  const { data: senderInfo } = useChannelInfo(
-    isSelf ? null : message.fromUid,
-    ChannelType.person,
-  );
-  const isBotSender =
-    !isSelf && (botSet.has(message.fromUid) || isChannelInfoBot(senderInfo));
+  const { data: senderInfo } = useChannelInfo(isSelf ? null : message.fromUid, ChannelType.person);
+  const isBotSender = !isSelf && (botSet.has(message.fromUid) || isChannelInfoBot(senderInfo));
 
   const revoke = useRevokeMessage();
   const setDraft = useReplyDraft((s) => s.set);
@@ -217,11 +214,7 @@ export function MessageBubble({
               {message.sendFailed && (
                 <span
                   className="inline-flex shrink-0"
-                  title={
-                    message.reasonCode === -1
-                      ? "发送失败：IM 未连接或超时"
-                      : `发送失败 (reasonCode=${message.reasonCode ?? "?"})`
-                  }
+                  title={reasonCodeToMessage(message.reasonCode)}
                 >
                   <AlertCircle
                     className="h-3.5 w-3.5 text-(--color-destructive)"

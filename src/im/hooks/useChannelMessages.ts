@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { fetchChannelHistory } from "@/im/history";
 import type { MessageView } from "@/im/message";
 import { onImMessage, onImMessageRevoked, onImMessageUpdated } from "@/im/proxy";
+import { REASON_TIMEOUT, reasonCodeToMessage } from "@/im/sendError";
 import { shouldKeepPersonMessageForSpace } from "@/im/spaceFilter";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
 
@@ -59,7 +61,14 @@ export function useChannelMessages(
   // 这是为了应对 SDK 在 WS 未连接时 fire-and-forget 静默吞失败的情形。
   const sendTimers = useRef<Map<string, number>>(new Map());
   const SEND_TIMEOUT_MS = 10_000;
-  const SEND_TIMEOUT_REASON = -1;
+  const SEND_TIMEOUT_REASON = REASON_TIMEOUT;
+  // 已 toast 过失败的 clientMsgNo，避免同一条消息多次提示（stub 超时 + sendack 也来时只弹一次）
+  const toastedFailures = useRef<Set<string>>(new Set());
+  const toastSendFailureOnce = useCallback((clientMsgNo: string, reasonCode: number) => {
+    if (toastedFailures.current.has(clientMsgNo)) return;
+    toastedFailures.current.add(clientMsgNo);
+    toast.error(reasonCodeToMessage(reasonCode));
+  }, []);
 
   // 用 useCallback 稳定引用，避免 hook deps 触发不必要的 effect 重订阅
   const clearSendTimer = useCallback((clientMsgNo: string) => {
@@ -97,6 +106,7 @@ export function useChannelMessages(
     inflightRef.current = false;
     hasMoreRef.current = true;
     clearAllSendTimers();
+    toastedFailures.current.clear();
     setState({ messages: [], loading: true, loadingMore: false, hasMore: true, error: null });
 
     fetchChannelHistory(channelId, channelType, { limit: PAGE })
@@ -162,6 +172,7 @@ export function useChannelMessages(
             });
             return touched ? { ...prev, messages: next } : prev;
           });
+          toastSendFailureOnce(cmsg, SEND_TIMEOUT_REASON);
         }, SEND_TIMEOUT_MS);
         sendTimers.current.set(cmsg, timer);
       }
@@ -170,7 +181,7 @@ export function useChannelMessages(
         messages: [...prev.messages, m].sort((a, b) => a.messageSeq - b.messageSeq),
       }));
     });
-  }, [channelId, channelType, spaceId]);
+  }, [channelId, channelType, spaceId, toastSendFailureOnce]);
 
   // sendack 回填：按 clientMsgNo 找到 stub，把 messageId/messageSeq 替换成真实值。
   useEffect(() => {
@@ -199,8 +210,12 @@ export function useChannelMessages(
         if (ev.reasonCode === 1 && ev.messageId) seenIds.current.add(ev.messageId);
         return { ...prev, messages: next };
       });
+      // 服务端业务失败（被禁言/拉黑/不存在等）也 toast 一次具体原因
+      if (ev.reasonCode !== 1 && ev.clientMsgNo) {
+        toastSendFailureOnce(ev.clientMsgNo, ev.reasonCode);
+      }
     });
-  }, [channelId, channelType, clearSendTimer]);
+  }, [channelId, channelType, clearSendTimer, toastSendFailureOnce]);
 
   // 撤回
   useEffect(() => {

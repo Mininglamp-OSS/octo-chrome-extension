@@ -1,16 +1,17 @@
-import { Bell, BellOff, Pin, PinOff, Edit2, Trash2, LogOut, Check } from "lucide-react";
+import { Bell, BellOff, Check, Edit2, LogOut, Pin, PinOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useChannelInfo } from "@/api/queries/channels";
-import { isChannelInfoBot } from "@/api/schemas/channel";
 import {
   useClearChannelMessages,
   useExitGroup,
   useRenameGroup,
   useUpdateChannelSetting,
 } from "@/api/queries/channelActions";
+import { useChannelInfo } from "@/api/queries/channels";
 import { useChannelMembers } from "@/api/queries/members";
 import { useAddPinned, usePinned, useRemovePinned } from "@/api/queries/pinned";
+import { isChannelInfoBot } from "@/api/schemas/channel";
+import { getApiUrl } from "@/api/url";
 import { AiBadge } from "@/components/octo/AiBadge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -24,9 +25,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { getApiUrl } from "@/api/url";
 import { ChannelType } from "@/const/channel";
 import { useBotUidSet } from "@/hooks/useBotUidSet";
+import { useChannelAvatarTag } from "@/hooks/useChannelAvatarTag";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { useDrawerStore } from "@/stores/drawer";
 import { selectCurrentSpaceId, useSpaceStore } from "@/stores/space";
@@ -34,7 +35,7 @@ import {
   avatarGradient,
   channelAvatarUrl,
   getFirstChar,
-  resolveImageURL,
+  resolveLogoUrl,
   resolvePersonAvatar,
 } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
@@ -50,8 +51,7 @@ export function OctoInfoDrawer() {
   const { data: info } = useChannelInfo(channelId, channelType);
   const isGroup = channelType !== ChannelType.person;
   const botSet = useBotUidSet();
-  const isBotChannel =
-    !isGroup && !!channelId && (botSet.has(channelId) || isChannelInfoBot(info));
+  const isBotChannel = !isGroup && !!channelId && (botSet.has(channelId) || isChannelInfoBot(info));
   const { data: members } = useChannelMembers({
     channelId: isGroup ? channelId : null,
     limit: 200,
@@ -76,6 +76,8 @@ export function OctoInfoDrawer() {
   const spaceId = useSpaceStore(selectCurrentSpaceId);
   const baseURL = getApiUrl();
   const channelLogo = info?.logo?.trim() || info?.avatar?.trim();
+  // hook 必须在 conditional 之外；channelId 为 null 时传空 string
+  const avatarTag = useChannelAvatarTag(channelId ?? "", channelType);
   const channelAvatarSrc = !channelId
     ? ""
     : channelType === ChannelType.person
@@ -83,11 +85,18 @@ export function OctoInfoDrawer() {
           baseURL,
           channelId,
           spaceId,
+          cacheTag: avatarTag,
           ...(channelLogo && { logo: channelLogo }),
         })
       : channelLogo
-        ? resolveImageURL(baseURL, channelLogo)
-        : channelAvatarUrl(baseURL, channelId, channelType, spaceId);
+        ? resolveLogoUrl({
+            baseURL,
+            channelId,
+            channelType,
+            logo: channelLogo,
+            cacheTag: avatarTag,
+          })
+        : channelAvatarUrl(baseURL, channelId, channelType, spaceId, avatarTag);
 
   async function togglePin(): Promise<void> {
     if (!channelId) return;
@@ -162,9 +171,7 @@ export function OctoInfoDrawer() {
         <ScrollArea className="min-h-0 flex-1">
           <div className="flex flex-col items-center gap-2 px-4 py-5">
             <Avatar className="h-16 w-16">
-              {channelAvatarSrc && (
-                <AvatarImage src={channelAvatarSrc} alt={info?.name ?? ""} />
-              )}
+              {channelAvatarSrc && <AvatarImage src={channelAvatarSrc} alt={info?.name ?? ""} />}
               <AvatarFallback
                 className="text-lg text-white"
                 style={{ background: avatarGradient(info?.name ?? channelId ?? "") }}
@@ -227,18 +234,10 @@ export function OctoInfoDrawer() {
                   成员 {members?.length ?? 0}
                 </p>
                 {aiMembers.length > 0 && (
-                  <MemberGroup
-                    title="AI 伙伴"
-                    members={aiMembers}
-                    spaceId={spaceId}
-                  />
+                  <MemberGroup title="AI 伙伴" members={aiMembers} spaceId={spaceId} />
                 )}
                 {humanMembers.length > 0 && (
-                  <MemberGroup
-                    title="成员"
-                    members={humanMembers}
-                    spaceId={spaceId}
-                  />
+                  <MemberGroup title="成员" members={humanMembers} spaceId={spaceId} />
                 )}
               </div>
             </>

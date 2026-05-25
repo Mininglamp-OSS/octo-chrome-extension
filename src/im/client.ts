@@ -76,14 +76,21 @@ async function fetchChannelInfo(channel: Channel): Promise<WKChannelInfo> {
       //  - useChannelInfo / useChannelInfos 命中同 key 立即拿新值
       //  - 与本进程内已有缓存对比，若 logo 字段变了就 bump 头像 tag，
       //    让 ?v= 失效，浏览器 disk cache miss → session 内即时刷新
+      //
+      // 关键顺序：必须先 bump 再 setQueryData。setQueryData 会触发 subscriber re-render
+      // → 组件重新调 resolveAvatarUrl 算 URL；若 bump 在后，本次 re-render 取到的还是
+      // 旧 tag，要等下次 re-render 才生效。
+      //
+      // logo diff 是兜底（很多 channel 的 logo 字段恒空 / 服务端不返）——
+      // 真正的 bump 信号在 messages/system/channelUpdate.ts 里强制触发，不依赖 diff。
       const key = channelQueryKey(channel.channelType, channel.channelID);
       const prev = queryClient.getQueryData<typeof d>(key);
-      queryClient.setQueryData(key, d);
       const prevLogo = (prev?.logo ?? prev?.avatar)?.trim();
       const nextLogo = (d.logo ?? d.avatar)?.trim();
       if (prev && prevLogo !== nextLogo) {
         bumpAvatarTag(channel.channelID, channel.channelType);
       }
+      queryClient.setQueryData(key, d);
     }
   } catch (err) {
     console.debug("[octo:im] channelInfo not found", channel.channelID, channel.channelType, err);

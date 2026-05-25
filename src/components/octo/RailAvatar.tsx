@@ -1,12 +1,8 @@
 import { Headphones, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ChannelType } from "@/const/channel";
-import {
-  channelAvatarUrl,
-  getInitials,
-  resolveImageURL,
-  resolvePersonAvatar,
-} from "@/utils/avatar";
+import { useChannelAvatarTag } from "@/hooks/useChannelAvatarTag";
+import { channelAvatarUrl, getInitials, resolveLogoUrl, resolvePersonAvatar } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
 import { getThreadHueColor, getTitleColor } from "@/utils/titleColor";
 
@@ -62,12 +58,14 @@ export function RailAvatar({
   const hasMention = mentionCount > 0;
   const hasUnread = unread > 0 && !hasMention;
 
+  const avatarTag = useChannelAvatarTag(channelId, channelType);
   const avatarUrl = resolveAvatarUrl({
     baseURL,
     channelId,
     channelType,
     spaceId: spaceId ?? null,
     logo,
+    cacheTag: avatarTag,
   });
   const initials = getInitials(name);
   const fallbackBg = getTitleColor(name);
@@ -181,8 +179,9 @@ function resolveAvatarUrl(opts: {
   channelType: number;
   spaceId: string | null;
   logo?: string;
+  cacheTag?: string;
 }): string {
-  const { baseURL, channelId, channelType, spaceId, logo } = opts;
+  const { baseURL, channelId, channelType, spaceId, logo, cacheTag } = opts;
   if (!baseURL || !channelId) return "";
   if (channelType === ChannelType.person || channelType === ChannelType.customerService) {
     const cleanLogo = logo?.trim();
@@ -191,9 +190,25 @@ function resolveAvatarUrl(opts: {
       channelId,
       spaceId,
       ...(cleanLogo && { logo: cleanLogo }),
+      ...(cacheTag && { cacheTag }),
     });
   }
+  // 子区：忽略调用方传入的 logo —— 子区 channelInfo.logo 通常是创建子区时的父群头像
+  // 快照副本，父群头像更新后不会同步。强制走 channelAvatarUrl，由它内部按父群
+  // cacheTag 拼 URL，bumpAvatarTag(parent, group) 触发后立刻刷新。
+  if (channelType === ChannelType.communityTopic) {
+    return channelAvatarUrl(baseURL, channelId, channelType, spaceId, cacheTag);
+  }
+  // group / 其他：channelInfo.logo 优先，但必须带 ?v=tag cache buster，
+  // 否则 sidepanel 重开后浏览器仍命中旧 disk cache。
   const cleanLogo = logo?.trim();
-  if (cleanLogo) return resolveImageURL(baseURL, cleanLogo);
-  return channelAvatarUrl(baseURL, channelId, channelType, spaceId);
+  if (cleanLogo)
+    return resolveLogoUrl({
+      baseURL,
+      channelId,
+      channelType,
+      logo: cleanLogo,
+      ...(cacheTag && { cacheTag }),
+    });
+  return channelAvatarUrl(baseURL, channelId, channelType, spaceId, cacheTag);
 }

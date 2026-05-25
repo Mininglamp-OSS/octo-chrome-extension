@@ -20,6 +20,7 @@ import { useSpaceStore } from "@/stores/space";
 import {
   channelAvatarUrl,
   resolveImageURL,
+  resolveLogoUrl,
   resolvePersonAvatar,
   stripSpacePrefix,
 } from "@/utils/avatar";
@@ -69,7 +70,7 @@ export function CmdkApp() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [isLogined]);
+  }, [isLogined, notifyParentClose]);
 
   if (!isLogined) {
     return <CmdkLoggedOutNotice onClose={notifyParentClose} />;
@@ -158,7 +159,12 @@ function CmdkAppAuthed() {
         } else {
           const logo = defaultInfo.logo?.trim() || defaultInfo.avatar?.trim();
           avatar = logo
-            ? resolveImageURL(baseURL, logo)
+            ? resolveLogoUrl({
+                baseURL,
+                channelId: defaultCh.channelId,
+                channelType: defaultCh.channelType,
+                logo,
+              })
             : channelAvatarUrl(baseURL, defaultCh.channelId, defaultCh.channelType, spaceId);
         }
         setPicked({
@@ -227,7 +233,7 @@ function CmdkAppAuthed() {
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [pickerOpen]);
+  }, [pickerOpen, close]);
 
   function handleMaskMouseDown(e: React.MouseEvent<HTMLDivElement>): void {
     if (e.target !== e.currentTarget) return;

@@ -45,7 +45,7 @@ import {
   avatarGradient,
   channelAvatarUrl,
   getFirstChar,
-  resolveImageURL,
+  resolveLogoUrl,
   resolvePersonAvatar,
 } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
@@ -146,8 +146,19 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
         ...(logo && { logo }),
       });
     }
+    // 子区：忽略 info.logo（stale 父群头像快照），强制走 channelAvatarUrl 由其内部按
+    // 父群 cacheTag 拼 URL，跟 Rail/Hover 一致
+    if (c.channelType === ChannelType.communityTopic) {
+      return channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
+    }
     const logo = info?.logo?.trim();
-    if (logo) return resolveImageURL(baseURL, logo);
+    if (logo)
+      return resolveLogoUrl({
+        baseURL,
+        channelId: c.channelId,
+        channelType: c.channelType,
+        logo,
+      });
     return channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
   }
 
@@ -460,177 +471,175 @@ export function ConversationList({ picker = false, filter }: ConversationListPro
   }
 
   return (
-    <>
-      <DndContext
-        sensors={sensors}
-        onDragStart={(e) => {
-          dbgDnd("start", e.active.id, e.active.data.current);
-          const d = e.active.data.current as
-            | { type?: "group" | "category"; categoryId?: string | null }
-            | undefined;
-          if (d?.type === "category" && d.categoryId) {
-            const cat = (categories ?? []).find((c) => c.category_id === d.categoryId);
-            if (cat) {
-              setActiveDrag({
-                type: "category",
-                categoryId: d.categoryId,
-                name: cat.name,
-              });
-              document.body.style.cursor = "grabbing";
-            }
-            return;
+    <DndContext
+      sensors={sensors}
+      onDragStart={(e) => {
+        dbgDnd("start", e.active.id, e.active.data.current);
+        const d = e.active.data.current as
+          | { type?: "group" | "category"; categoryId?: string | null }
+          | undefined;
+        if (d?.type === "category" && d.categoryId) {
+          const cat = (categories ?? []).find((c) => c.category_id === d.categoryId);
+          if (cat) {
+            setActiveDrag({
+              type: "category",
+              categoryId: d.categoryId,
+              name: cat.name,
+            });
+            document.body.style.cursor = "grabbing";
           }
-          if (d?.type === "group") {
-            const cid = String(e.active.id).replace(/^conv::/, "");
-            const conv = conversations.find((c) => c.channelId === cid);
-            if (conv) {
-              setActiveDrag({
-                type: "group",
-                channelId: cid,
-                name: resolveDisplayName(conv),
-                avatarUrl: resolveAvatarUrl(conv),
-              });
-              document.body.style.cursor = "grabbing";
-            }
+          return;
+        }
+        if (d?.type === "group") {
+          const cid = String(e.active.id).replace(/^conv::/, "");
+          const conv = conversations.find((c) => c.channelId === cid);
+          if (conv) {
+            setActiveDrag({
+              type: "group",
+              channelId: cid,
+              name: resolveDisplayName(conv),
+              avatarUrl: resolveAvatarUrl(conv),
+            });
+            document.body.style.cursor = "grabbing";
           }
-        }}
-        onDragCancel={() => {
-          setActiveDrag(null);
-          document.body.style.cursor = "";
-        }}
-        onDragEnd={(e) => void handleDragEnd(e)}
-      >
-        <div ref={parentRef} className="h-full overflow-y-auto">
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
-            {virtualizer.getVirtualItems().map((vi) => {
-              const it = items[vi.index];
-              if (!it) return null;
+        }
+      }}
+      onDragCancel={() => {
+        setActiveDrag(null);
+        document.body.style.cursor = "";
+      }}
+      onDragEnd={(e) => void handleDragEnd(e)}
+    >
+      <div ref={parentRef} className="h-full overflow-y-auto">
+        <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          {virtualizer.getVirtualItems().map((vi) => {
+            const it = items[vi.index];
+            if (!it) return null;
 
-              if (it.type === "header") {
-                if (!it.sectionId) return null;
-                const sid = it.sectionId;
-                const isDefault = it.isDefault ?? false;
-                return (
-                  <CategorySection
-                    key={`h-${sid}`}
-                    categoryId={it.categoryId ?? null}
-                    sortableId={null}
-                    name={it.label ?? ""}
-                    count={it.count ?? 0}
-                    unreadCount={it.sectionUnread ?? 0}
-                    hasMention={it.sectionMention ?? false}
-                    collapsed={it.collapsed ?? false}
-                    isDefault={isDefault}
-                    orderedCategoryIds={(categories ?? [])
-                      .map((c) => c.category_id)
-                      .filter((id): id is string => Boolean(id))}
-                    onToggle={() => toggleCollapse(sid)}
-                    topPx={vi.start}
-                    heightPx={vi.size}
-                  />
-                );
-              }
+            if (it.type === "header") {
+              if (!it.sectionId) return null;
+              const sid = it.sectionId;
+              const isDefault = it.isDefault ?? false;
+              return (
+                <CategorySection
+                  key={`h-${sid}`}
+                  categoryId={it.categoryId ?? null}
+                  sortableId={null}
+                  name={it.label ?? ""}
+                  count={it.count ?? 0}
+                  unreadCount={it.sectionUnread ?? 0}
+                  hasMention={it.sectionMention ?? false}
+                  collapsed={it.collapsed ?? false}
+                  isDefault={isDefault}
+                  orderedCategoryIds={(categories ?? [])
+                    .map((c) => c.category_id)
+                    .filter((id): id is string => Boolean(id))}
+                  onToggle={() => toggleCollapse(sid)}
+                  topPx={vi.start}
+                  heightPx={vi.size}
+                />
+              );
+            }
 
-              if (it.type === "thread") {
-                const conv = it.conv;
-                if (!conv) return null;
-                return (
-                  <ThreadRow
-                    key={`t-${conv.channelId}`}
-                    conv={conv}
-                    isCurrent={conv.channelId === channelId && conv.channelType === channelType}
-                    atCount={Math.max(
-                      conv.mentionCount,
-                      atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
-                    )}
-                    displayName={resolveDisplayName(conv)}
-                    threadLast={it.threadLast ?? false}
-                    onSelect={() => select(conv.channelId, conv.channelType)}
-                    topPx={vi.start}
-                    heightPx={vi.size}
-                  />
-                );
-              }
-
+            if (it.type === "thread") {
               const conv = it.conv;
               if (!conv) return null;
-              const categoryOfConv = (() => {
-                if (filter === "dm") return null;
-                for (const cat of categories ?? []) {
-                  if (cat.groups.some((g) => g.group_no === conv.channelId)) {
-                    return cat.category_id ?? null;
-                  }
-                }
-                return null;
-              })();
-              const hasThreads =
-                conv.channelType === ChannelType.group &&
-                rawConversations.some(
-                  (c) =>
-                    c.channelType === ChannelType.communityTopic &&
-                    parseParentGroupNo(c.channelId) === conv.channelId,
-                );
               return (
-                <ConvRow
-                  key={`${conv.channelId}:${conv.channelType}`}
+                <ThreadRow
+                  key={`t-${conv.channelId}`}
                   conv={conv}
-                  pinned={it.pinned ?? conv.pinned}
                   isCurrent={conv.channelId === channelId && conv.channelType === channelType}
                   atCount={Math.max(
                     conv.mentionCount,
                     atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
                   )}
                   displayName={resolveDisplayName(conv)}
-                  avatarUrl={resolveAvatarUrl(conv)}
+                  threadLast={it.threadLast ?? false}
                   onSelect={() => select(conv.channelId, conv.channelType)}
                   topPx={vi.start}
                   heightPx={vi.size}
-                  sortable={filter !== "dm" && conv.channelType === ChannelType.group}
-                  categoryOfConv={categoryOfConv}
-                  picker={picker}
-                  hasThreads={hasThreads}
-                  threadsExpanded={expandedThreads.isExpanded(conv.channelId)}
-                  onToggleThreads={() => expandedThreads.toggle(conv.channelId)}
                 />
               );
-            })}
-          </div>
-        </div>
+            }
 
-        <DragOverlay dropAnimation={null}>
-          {activeDrag?.type === "group" ? (
-            <div
-              className="flex h-9 w-fit max-w-[220px] items-center gap-2 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
-              style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
-            >
-              <Avatar className="h-[26px] w-[26px] shrink-0">
-                {activeDrag.avatarUrl && (
-                  <AvatarImage src={activeDrag.avatarUrl} alt={activeDrag.name} />
+            const conv = it.conv;
+            if (!conv) return null;
+            const categoryOfConv = (() => {
+              if (filter === "dm") return null;
+              for (const cat of categories ?? []) {
+                if (cat.groups.some((g) => g.group_no === conv.channelId)) {
+                  return cat.category_id ?? null;
+                }
+              }
+              return null;
+            })();
+            const hasThreads =
+              conv.channelType === ChannelType.group &&
+              rawConversations.some(
+                (c) =>
+                  c.channelType === ChannelType.communityTopic &&
+                  parseParentGroupNo(c.channelId) === conv.channelId,
+              );
+            return (
+              <ConvRow
+                key={`${conv.channelId}:${conv.channelType}`}
+                conv={conv}
+                pinned={it.pinned ?? conv.pinned}
+                isCurrent={conv.channelId === channelId && conv.channelType === channelType}
+                atCount={Math.max(
+                  conv.mentionCount,
+                  atMeCounts.get(atMeKey(conv.channelId, conv.channelType)) ?? 0,
                 )}
-                <AvatarFallback
-                  className="text-white text-xs"
-                  style={{ background: avatarGradient(activeDrag.name) }}
-                >
-                  {getFirstChar(activeDrag.name)}
-                </AvatarFallback>
-              </Avatar>
-              <span className="truncate text-[13px] font-medium text-(--color-foreground)">
-                {activeDrag.name}
-              </span>
-            </div>
-          ) : activeDrag?.type === "category" ? (
-            <div
-              className="flex h-7 w-fit max-w-[200px] items-center gap-1 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
-              style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
-            >
-              <span className="truncate text-[12px] font-medium text-(--color-foreground)">
-                {activeDrag.name}
-              </span>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    </>
+                displayName={resolveDisplayName(conv)}
+                avatarUrl={resolveAvatarUrl(conv)}
+                onSelect={() => select(conv.channelId, conv.channelType)}
+                topPx={vi.start}
+                heightPx={vi.size}
+                sortable={filter !== "dm" && conv.channelType === ChannelType.group}
+                categoryOfConv={categoryOfConv}
+                picker={picker}
+                hasThreads={hasThreads}
+                threadsExpanded={expandedThreads.isExpanded(conv.channelId)}
+                onToggleThreads={() => expandedThreads.toggle(conv.channelId)}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <DragOverlay dropAnimation={null}>
+        {activeDrag?.type === "group" ? (
+          <div
+            className="flex h-9 w-fit max-w-[220px] items-center gap-2 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
+            style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
+          >
+            <Avatar className="h-[26px] w-[26px] shrink-0">
+              {activeDrag.avatarUrl && (
+                <AvatarImage src={activeDrag.avatarUrl} alt={activeDrag.name} />
+              )}
+              <AvatarFallback
+                className="text-white text-xs"
+                style={{ background: avatarGradient(activeDrag.name) }}
+              >
+                {getFirstChar(activeDrag.name)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="truncate text-[13px] font-medium text-(--color-foreground)">
+              {activeDrag.name}
+            </span>
+          </div>
+        ) : activeDrag?.type === "category" ? (
+          <div
+            className="flex h-7 w-fit max-w-[200px] items-center gap-1 rounded-md border border-(--color-border) bg-(--color-background)/95 px-2 shadow-lg ring-1 backdrop-blur-sm"
+            style={{ "--tw-ring-color": "rgba(101,105,232,0.35)" } as React.CSSProperties}
+          >
+            <span className="truncate text-[12px] font-medium text-(--color-foreground)">
+              {activeDrag.name}
+            </span>
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }
 

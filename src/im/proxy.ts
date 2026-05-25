@@ -13,6 +13,7 @@ import {
   sendImMessage,
 } from "@/im/client";
 import { type MessageView, toMessageView } from "@/im/message";
+import { ImNotConnectedError } from "@/im/sendError";
 import { rehydrateContent } from "@/im/serialize";
 import type { SendMessageReq } from "@/platform/messaging";
 
@@ -33,10 +34,11 @@ export async function imGetStatus(): Promise<number> {
 }
 
 export async function imSendMessage(req: SendMessageReq): Promise<string> {
-  // 不做 isImConnected 前置检查（与 octo-web/mirror 行为一致：直接 chatManager.send）。
-  // SDK 内部是 fire-and-forget：未连接时 WKWebsocket.send 会静默 return，sendack 永远不回。
-  // 失败可见性靠 useChannelMessages 的 stub 10s 超时降级（标 sendFailed=true）+ MessageBubble
-  // 的红色 AlertCircle 视觉态，而不是阻塞用户发送。
+  // 入口快速失败：ws 未连接时直接 reject，避免 SDK fire-and-forget 静默吞包后
+  // 让用户等 10s 才看到红 ❌。可见性提示由调用方（Composer）的 catch toast 负责。
+  if (!isImConnected()) {
+    throw new ImNotConnectedError();
+  }
   const content = rehydrateContent(req.content);
   const channel = new Channel(req.channelId, req.channelType);
   const msg = await sendImMessage(content, channel);

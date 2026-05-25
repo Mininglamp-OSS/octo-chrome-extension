@@ -15,7 +15,7 @@ import {
   avatarGradient,
   channelAvatarUrl,
   getFirstChar,
-  resolveImageURL,
+  resolveLogoUrl,
   resolvePersonAvatar,
 } from "@/utils/avatar";
 
@@ -129,7 +129,12 @@ export function CmdkChannelPicker({ current, onPick, onCancel }: CmdkChannelPick
       } else {
         const logoFromInfo = info?.logo?.trim() || info?.avatar?.trim();
         avatar = logoFromInfo
-          ? resolveImageURL(baseURL, logoFromInfo)
+          ? resolveLogoUrl({
+              baseURL,
+              channelId: c.channelId,
+              channelType: c.channelType,
+              logo: logoFromInfo,
+            })
           : channelAvatarUrl(baseURL, c.channelId, c.channelType, spaceId);
       }
       const isBot =
