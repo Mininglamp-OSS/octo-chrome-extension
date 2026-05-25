@@ -30,6 +30,8 @@ let lastSidepanelActiveAt = 0;
 let lastSidepanelHasUnread = false;
 let lastOffscreenHasUnread = false;
 let ttlCheckTimer: ReturnType<typeof setInterval> | null = null;
+// 角标总开关缓存：关闭时所有 hasUnread 信号都被吞掉（避免 sidepanel 开启时再次点亮红点）
+let badgeEnabled = true;
 
 const notifMap = new Map<string, { channelId: string; channelType: number }>();
 
@@ -38,6 +40,10 @@ function sidepanelActive(): boolean {
 }
 
 function recomputeBadge(): void {
+  if (!badgeEnabled) {
+    void setUnreadBadge(false);
+    return;
+  }
   const hasUnread = sidepanelActive() ? lastSidepanelHasUnread : lastOffscreenHasUnread;
   void setUnreadBadge(hasUnread);
 }
@@ -49,22 +55,40 @@ async function bringUpOffscreenIfLoggedIn(): Promise<void> {
   }
 }
 
+/**
+ * sidepanel 失活的统一处理：立即结束 active 窗口 + 拉起 offscreen + 刷红点。
+ * 三个来源都汇到这里（去重）：
+ *  - sidepanel unmount 主动 sendMessage(active:false) —— 但 page 卸载时 IPC 可能丢
+ *  - chrome.sidePanel.onClosed (Chrome 142+) —— background 端主动感知，最可靠
+ *  - TTL 兜底（5s 无心跳）—— sidepanel 进程异常死亡的最后防线
+ */
+function handleSidepanelInactive(reason: string): void {
+  if (lastSidepanelActiveAt === 0 && !lastSidepanelHasUnread) return;
+  console.info(`[octo:bg] sidepanel inactive (${reason}), bringing offscreen back`);
+  lastSidepanelActiveAt = 0;
+  lastSidepanelHasUnread = false;
+  void bringUpOffscreenIfLoggedIn();
+  recomputeBadge();
+}
+
 function startTtlCheck(): void {
   if (ttlCheckTimer) return;
-  // 每 2s 检查：sidepanel TTL 过期 → 启 offscreen 接管；同时刷新 badge
+  // 每 2s 检查：sidepanel 心跳 5s 过期 → 视为失活，走兜底
   ttlCheckTimer = setInterval(() => {
-    if (!sidepanelActive() && (lastSidepanelHasUnread || lastSidepanelActiveAt !== 0)) {
-      // sidepanel 失活了，立即重启 offscreen + 刷新 badge
-      lastSidepanelActiveAt = 0;
-      lastSidepanelHasUnread = false;
-      void bringUpOffscreenIfLoggedIn();
-      recomputeBadge();
+    if (!sidepanelActive() && lastSidepanelActiveAt !== 0) {
+      handleSidepanelInactive("ttl");
     }
   }, 2_000);
 }
 
 export function setupNotifications(): void {
   startTtlCheck();
+
+  // 初始化 + 监听角标总开关
+  void preferencesStorage.getValue().then((prefs) => {
+    badgeEnabled = prefs.notificationsEnabled;
+    recomputeBadge();
+  });
 
   // ===== 来自 sidepanel =====
   onMessage("sidepanelHeartbeat", () => {
@@ -80,17 +104,22 @@ export function setupNotifications(): void {
         console.info("[octo:bg] sidepanel took over, closing offscreen");
         void closeOffscreenDocument();
       }
+      recomputeBadge();
     } else {
-      // sidepanel 主动表态自己关闭：立即结束 sidepanel-active 窗口 + 拉起 offscreen
-      lastSidepanelActiveAt = 0;
-      lastSidepanelHasUnread = false;
-      if (wasActive) {
-        console.info("[octo:bg] sidepanel closed, bringing offscreen back");
-        void bringUpOffscreenIfLoggedIn();
-      }
+      // sidepanel 主动表态自己关闭（IPC 可能丢，onClosed 是更可靠的兜底）
+      handleSidepanelInactive("unmount-ipc");
     }
-    recomputeBadge();
   });
+
+  // Chrome 142+ chrome.sidePanel.onClosed：sidepanel page 关闭时 background 主动得知。
+  // 比 sidepanel unmount sendMessage 更可靠（page 卸载时 IPC 可能丢，导致 offscreen
+  // 不及时拉起、桌面通知漏弹）。对齐 mirror background.ts:605-608。
+  const sidePanelApi = (chrome as unknown as { sidePanel?: { onClosed?: chrome.events.Event<() => void> } }).sidePanel;
+  if (sidePanelApi?.onClosed) {
+    sidePanelApi.onClosed.addListener(() => {
+      handleSidepanelInactive("sidePanel.onClosed");
+    });
+  }
 
   // ===== 来自 offscreen =====
   onMessage("offscreenSyncResult", ({ data }) => {
@@ -152,11 +181,12 @@ export function setupNotifications(): void {
     notifMap.delete(id);
   });
 
-  // 偏好刷新（关掉总开关时立即清掉残留通知 + 红点）
+  // 偏好刷新：同步 badgeEnabled 缓存；关掉时清掉残留通知 + recompute 把红点也归零
   preferencesStorage.watch((prefs) => {
+    badgeEnabled = prefs.notificationsEnabled;
     if (!prefs.notificationsEnabled) {
       void clearAllNotifications();
-      void setUnreadBadge(false);
     }
+    recomputeBadge();
   });
 }

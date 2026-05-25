@@ -30,6 +30,8 @@ export function SettingsPopoverContent() {
   const theme = usePreferencesStore((s) => s.theme);
   const setTheme = usePreferencesStore((s) => s.setTheme);
   const layout = usePreferencesStore((s) => s.prefs.layout);
+  const notificationsEnabled = usePreferencesStore((s) => s.prefs.notificationsEnabled);
+  const notificationsVisible = usePreferencesStore((s) => s.prefs.notificationsVisible);
   const setPrefs = usePreferencesStore((s) => s.setPrefs);
 
   // theme: light → paper, dark → moon, system → 用浏览器实际偏好估算
@@ -72,6 +74,42 @@ export function SettingsPopoverContent() {
           </SegmentButton>
         ))}
       </Segment>
+
+      {/* 未读角标提醒 */}
+      <SectionHeader>未读角标提醒</SectionHeader>
+      <Segment>
+        <SegmentButton
+          active={notificationsEnabled}
+          onClick={() => void setPrefs({ notificationsEnabled: true })}
+        >
+          开启
+        </SegmentButton>
+        <SegmentButton
+          active={!notificationsEnabled}
+          onClick={() => void setPrefs({ notificationsEnabled: false, notificationsVisible: false })}
+        >
+          关闭
+        </SegmentButton>
+      </Segment>
+
+      {/* 桌面弹窗通知 */}
+      <SectionHeader>桌面弹窗通知</SectionHeader>
+      <Segment>
+        <SegmentButton
+          active={notificationsVisible}
+          disabled={!notificationsEnabled}
+          onClick={() => void setPrefs({ notificationsVisible: true })}
+        >
+          开启
+        </SegmentButton>
+        <SegmentButton
+          active={!notificationsVisible}
+          disabled={!notificationsEnabled}
+          onClick={() => void setPrefs({ notificationsVisible: false })}
+        >
+          关闭
+        </SegmentButton>
+      </Segment>
     </div>
   );
 }
@@ -94,10 +132,12 @@ function Segment({ children }: { children: React.ReactNode }) {
 
 function SegmentButton({
   active,
+  disabled,
   onClick,
   children,
 }: {
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
   children: React.ReactNode;
 }) {
@@ -105,11 +145,13 @@ function SegmentButton({
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className={cn(
         "flex flex-1 items-center justify-center gap-1.5 rounded-[5px] px-2 py-1 text-[11.5px] font-medium transition-colors",
         active
           ? "bg-(--color-background) text-(--color-foreground) shadow-sm"
           : "text-(--color-muted-foreground) hover:text-(--color-foreground)",
+        disabled && "cursor-not-allowed opacity-50 hover:text-(--color-muted-foreground)",
       )}
     >
       {children}
