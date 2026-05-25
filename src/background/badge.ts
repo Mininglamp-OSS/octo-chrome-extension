@@ -8,8 +8,13 @@ import { browser } from "wxt/browser";
  *  - 只合成一次（启动时），缓存 ImageData
  *  - 串行 promise 链防止并发 setIcon 抖动
  *
+ * 几何（v2 · bottom-right bead，参考 mirror）：
+ *  - 位置右下角而非右上 —— octo 头/天线在上半部，右上角会被削；下半部是波浪 + 留白
+ *  - 白底 + 实红双圆（mirror 同源），不用 stroke —— 半透明描边在 16px 下糊成奶红
+ *  - 利用 icon 自带的 ~6% 透明边距：白圈外缘贴 canvas (size, size) 边
+ *
  * 多尺寸：48 / 128 同时合成；chrome 不同 DPR 下不会模糊。
- * 小尺寸 16 不合成（红点画上去糊成一团），直接还原走 path 即可，未读态忽略 16px。
+ * 小尺寸 16 不合成（双圆直径 ~3px 也糊），直接还原走 path 即可，未读态忽略 16px。
  */
 
 const SIZES = [48, 128] as const;
@@ -34,17 +39,21 @@ async function loadAndDot(size: number): Promise<ImageData | null> {
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(bitmap, 0, 0, size, size);
-    // 右上角红点：直径 = size * 0.42，描白边让浅色图标也看得清
-    const r = Math.round(size * 0.21);
-    const cx = size - r - Math.round(size * 0.04);
-    const cy = r + Math.round(size * 0.04);
+    // 右下角浮起小球：白底 + 实红双圆，贴 canvas 右下角
+    // dotR / whiteR 比例参考 mirror，外缘恰好顶到 (size, size)，
+    // 占用 icon 自带的 ~6% 透明边距 → 视觉上像挂在右下角
+    const dotR = Math.round(size * 0.18);
+    const whiteR = Math.round(size * 0.21);
+    const cx = size - whiteR;
+    const cy = size - whiteR;
+    ctx.beginPath();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.arc(cx, cy, whiteR, 0, Math.PI * 2);
+    ctx.fill();
     ctx.beginPath();
     ctx.fillStyle = DOT_COLOR;
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
     ctx.fill();
-    ctx.lineWidth = Math.max(1, Math.round(size * 0.025));
-    ctx.strokeStyle = "rgba(255,255,255,0.92)";
-    ctx.stroke();
     return ctx.getImageData(0, 0, size, size);
   } catch (err) {
     console.warn(`[octo:bg] dot icon ${size} failed`, err);

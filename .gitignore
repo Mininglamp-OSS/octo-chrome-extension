@@ -21,6 +21,7 @@ coverage/
 
 # 本地设计稿 / 临时参考
 design/
+design-drafts/
 
 # Editor directories and files
 .vscode/*
