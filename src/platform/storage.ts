@@ -31,11 +31,17 @@ export interface Preferences {
   apiUrl: string;
   /** 阅读模式：消息版（默认气泡）/ 简化版（终端风紧凑） —— 对齐 mirror data-layout */
   layout: "message" | "cli";
+  /** 总开关：未读时是否在工具栏图标上点亮红点 */
+  notificationsEnabled: boolean;
+  /** 子开关：是否额外弹出系统桌面通知（依赖上面的总开关） */
+  notificationsVisible: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
   apiUrl: "",
   layout: "message",
+  notificationsEnabled: true,
+  notificationsVisible: true,
 };
 
 export const authStorage = storage.defineItem<AuthState | null>("local:octo:extension:auth-state", {

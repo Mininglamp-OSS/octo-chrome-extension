@@ -23,19 +23,18 @@ interface RailAvatarProps {
 }
 
 /**
- * Rail 上的 pin item 头像。
+ * Rail 上的 pin item 头像（对齐 mirror OctoSidepanelLayout）。
  *
  * 视觉规则：
- *  - 所有 channel 统一圆角方 32×32（`rounded-md`），形状一致便于扫视
- *  - 子区：父群头像（由 channelAvatarUrl 自动回落到 parent group）+ 右下 18px 圆形 # 角标，
- *    颜色 hash 子区名 → 同群多个子区可视觉区分
- *  - 群 / 客服 / AI：右下 18px 圆形角标
- *  - 真头像优先 → fallback 走 getInitials（双字符 / 词首缩写 / emoji）
- *  - 描边：未激活也有一道极淡 ring（黑 8% / 暗色白 10%），让方头像在浅底色 rail 上有轮廓；
- *    激活时覆盖为 ring-2 主色 + offset
- *  - 未读：右上 7px 红点
- *  - @me：右上 14px 橙色徽标（覆盖红点，但**不替换主体**，保留头像辨识）
- *  - 免打扰：整体 opacity 0.55，红点变灰
+ *  - **@me 时整个槽位替换成大橙色 @ 方块**（pulse 动画），不再保留头像辨识 ——
+ *    mirror 行为，让被 @ 的会话最显眼
+ *  - 否则走原头像 + 类型角标（子区 # / 群 Users / 客服 Headphones / AI）
+ *  - 真头像优先 → fallback getInitials（双字符/词首缩写/emoji）
+ *  - 未激活：极淡 ring（黑 8% / 暗色白 10%）
+ *  - 激活：ring-2 indigo
+ *  - **未读 badge：右上数字胶囊**（min-width 17px，圆角 100px，#F54A45 红底白字，
+ *    双 ring 贴纸效果），>99 显示 99+；mention 时也展示在 @ 方块右上
+ *  - 免打扰：整体 opacity 0.55，未读 badge 变灰
  */
 export function RailAvatar({
   channelId,
@@ -56,7 +55,7 @@ export function RailAvatar({
   const isCs = channelType === ChannelType.customerService;
   const isAi = isPrivate && !!isBot;
   const hasMention = mentionCount > 0;
-  const hasUnread = unread > 0 && !hasMention;
+  const hasUnread = unread > 0;
 
   const avatarTag = useChannelAvatarTag(channelId, channelType);
   const avatarUrl = resolveAvatarUrl({
@@ -80,93 +79,101 @@ export function RailAvatar({
         muted && "opacity-55",
       )}
     >
-      <Avatar
-        className={cn(
-          "h-8 w-8 overflow-hidden",
-          avatarShape,
-          // 未激活：极淡描边，浅/暗主题各一套
-          "ring-1 ring-black/[0.08] dark:ring-white/10",
-          // 激活：indigo 贴边 2px（与 mention chip / composer 一致的 active 色，
-          // 避免用 --color-primary —— zinc 主题下它是接近黑色，框感太重）
-          active && "ring-2 ring-[#6366f1]",
-        )}
-      >
-        {avatarUrl && (
-          <AvatarImage src={avatarUrl} alt={name} className={cn("object-cover", avatarShape)} />
-        )}
-        <AvatarFallback
+      {hasMention ? (
+        /* mention：整个槽位替换成大橙色 @ 方块（对齐 mirror wk-sidepanel-rail-icon-mention） */
+        <span
+          role="img"
+          aria-label={`@ 我 ${mentionCount > 1 ? mentionCount : ""}`}
           className={cn(
-            "text-white font-semibold leading-none tracking-tight select-none",
+            "grid h-8 w-8 place-items-center font-extrabold leading-none text-white select-none",
             avatarShape,
-            initials.length >= 2 ? "text-[11px]" : "text-[15px]",
+            "bg-[#F97316] shadow-[0_2px_6px_rgba(249,115,22,0.4)]",
+            "text-[18px] tracking-tight",
+            active && "ring-2 ring-[#6366f1] ring-offset-2 ring-offset-(--color-background)",
+            "animate-pulse",
           )}
-          style={{ background: fallbackBg }}
         >
-          {initials}
-        </AvatarFallback>
-      </Avatar>
+          @
+        </span>
+      ) : (
+        <>
+          <Avatar
+            className={cn(
+              "h-8 w-8 overflow-hidden",
+              avatarShape,
+              "ring-1 ring-black/[0.08] dark:ring-white/10",
+              active && "ring-2 ring-[#6366f1]",
+            )}
+          >
+            {avatarUrl && (
+              <AvatarImage src={avatarUrl} alt={name} className={cn("object-cover", avatarShape)} />
+            )}
+            <AvatarFallback
+              className={cn(
+                "text-white font-semibold leading-none tracking-tight select-none",
+                avatarShape,
+                initials.length >= 2 ? "text-[11px]" : "text-[15px]",
+              )}
+              style={{ background: fallbackBg }}
+            >
+              {initials}
+            </AvatarFallback>
+          </Avatar>
 
-      {/* 右下角 18px 类型角标（channelType 互斥）：
-          子区 # / 群 Users / 客服 Headphones / AI 文字。
-          私聊普通用户不挂角标（圆形头像本身已足够辨识）。 */}
-      {isThread && (
-        <span
-          aria-hidden
-          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[11px] font-black leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
-          style={{ background: getThreadHueColor(name) }}
-        >
-          #
-        </span>
-      )}
-      {isGroup && (
-        <span
-          aria-hidden
-          title="群聊"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#3B82F6] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
-        >
-          <Users className="h-[11px] w-[11px]" strokeWidth={2.75} />
-        </span>
-      )}
-      {isCs && (
-        <span
-          aria-hidden
-          title="客服"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F59E0B] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
-        >
-          <Headphones className="h-[11px] w-[11px]" strokeWidth={2.75} />
-        </span>
-      )}
-      {isAi && (
-        <span
-          aria-hidden
-          title="AI"
-          className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[9px] font-extrabold leading-none tracking-tight text-white shadow-[0_1px_2px_rgba(123,137,244,0.45)]"
-          style={{ background: "linear-gradient(135deg, #7B89F4 0%, #9D78F5 100%)" }}
-        >
-          AI
-        </span>
+          {/* 右下角 18px 类型角标 */}
+          {isThread && (
+            <span
+              aria-hidden
+              className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[11px] font-black leading-none text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+              style={{ background: getThreadHueColor(name) }}
+            >
+              #
+            </span>
+          )}
+          {isGroup && (
+            <span
+              aria-hidden
+              title="群聊"
+              className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#3B82F6] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+            >
+              <Users className="h-[11px] w-[11px]" strokeWidth={2.75} />
+            </span>
+          )}
+          {isCs && (
+            <span
+              aria-hidden
+              title="客服"
+              className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F59E0B] text-white shadow-[0_1px_2px_rgba(0,0,0,0.2)]"
+            >
+              <Headphones className="h-[11px] w-[11px]" strokeWidth={2.75} />
+            </span>
+          )}
+          {isAi && (
+            <span
+              aria-hidden
+              title="AI"
+              className="absolute -right-[3px] -bottom-[3px] grid h-[18px] w-[18px] place-items-center rounded-full border-[1.5px] border-(--color-background) text-[9px] font-extrabold leading-none tracking-tight text-white shadow-[0_1px_3px_rgba(123,137,244,0.45)]"
+              style={{ background: "linear-gradient(135deg, #7B89F4 0%, #9D78F5 100%)" }}
+            >
+              AI
+            </span>
+          )}
+        </>
       )}
 
-      {/* 未读：右上 7px 红点 */}
+      {/* 未读 badge：mirror 风格的数字胶囊 */}
       {hasUnread && (
         <span
-          aria-hidden
+          role="status"
+          aria-label={`未读 ${unread}`}
           className={cn(
-            "absolute -right-[2px] -top-[2px] h-[8px] w-[8px] rounded-full border-[1.5px] border-(--color-background)",
+            "absolute -top-[4px] -right-[6px] grid h-[17px] min-w-[17px] place-items-center rounded-full px-[5px] text-[10.5px] font-bold leading-none text-white",
             muted
-              ? "bg-(--color-muted-foreground)"
-              : "bg-[#F54A45] shadow-[0_0_0_0.5px_rgba(245,74,69,0.4)]",
+              ? "bg-(--color-muted-foreground) shadow-[0_0_0_1.5px_var(--color-background),0_1px_3px_rgba(0,0,0,0.15)]"
+              : "bg-[#F54A45] shadow-[0_0_0_1.5px_var(--color-background),0_0_0_2.5px_#F54A45,0_1px_3px_rgba(0,0,0,0.15)]",
           )}
-        />
-      )}
-
-      {/* @me：右上 14px 橙色徽标，覆盖未读红点；mentionCount > 1 时显示数字 */}
-      {hasMention && (
-        <span
-          aria-hidden
-          className="absolute -right-[4px] -top-[4px] grid h-[14px] min-w-[14px] place-items-center rounded-full border-[1.5px] border-(--color-background) bg-[#F97316] px-[3px] text-[9px] font-extrabold leading-none text-white shadow-[0_1px_3px_rgba(249,115,22,0.45)]"
         >
-          {mentionCount > 1 ? (mentionCount > 99 ? "99+" : mentionCount) : "@"}
+          {unread > 99 ? "99+" : unread}
         </span>
       )}
     </div>

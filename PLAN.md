@@ -467,6 +467,7 @@ vite-tsconfig-paths
 | **P7-3b** | Categories UI 集成：SpaceSwitcher 底部「管理分组…」入口；ConversationList 群项右键「移动到分组…」；按类目分段渲染（私聊段 + 每个 category 段 + 未分组段，可折叠） | ✅ |
 | **P7-4** | Reminders 提醒系统：reminder schema/endpoints；offscreen 注册 `syncRemindersCallback`/`reminderDoneCallback`；attach 监听器在 connect/新消息后自动 `reminderManager.sync()`；ConversationView 加 mentionCount；imSyncReminders/imReminderDone RPC；UI ConversationList/VerticalRail 显示 mentionCount（与 atMeStore 取 max）；进入 channel 自动 `imReminderDone` | ✅ |
 | **P7-5** | Cmdk 高级（对齐 mirror）：单页面板（顶栏来源 App chip + 引用块 + 多附件 chips + Composer + 内嵌 ChannelPicker）；iframe 改全屏透明 overlay；URL→App 解析（20 站点）；超长选段 (>500) 转 `.md` 附件 + `skipQuotedBody`；SEND_ACK_TIMEOUT 12s；`buildCmdkMessageText` 拼引用；拖拽面板；浮标渐变药丸 + 入场动画；`overlaySelectors.isInsidePortal` 防 emoji/mention 弹层误关；持久化 last target；7 子组件 + 5 工具 + 21 新测试 | ✅ |
+| **P7-9** | **Offscreen 常驻 IM + icon 红点 + 系统通知**（对齐 mirror）：新建 `entrypoints/offscreen/`（精简 SDK，deviceFlag=0 与 sidepanel pc=2/web=1 错开）；`background/{offscreen,badge,notifications}.ts`（auth 就绪后 ensureOffscreenDocument；setIcon 静态红点 PNG；sidepanel heartbeat 5s TTL 防重复通知）；`platform/notifications.ts` 复活；messaging 加 5 type；preferences 加 notificationsEnabled/notificationsVisible + OptionsApp 通知 section | ✅ |
 
 ### 待做（按优先级）
 

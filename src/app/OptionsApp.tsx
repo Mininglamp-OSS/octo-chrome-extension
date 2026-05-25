@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { LogOut } from "lucide-react";
+import { useState } from "react";
 import { toast } from "sonner";
-import { useLogout } from "@/api/queries/auth";
 import { DEFAULT_API_URL } from "@/api/endpoints";
+import { useLogout } from "@/api/queries/auth";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { useAuthStore, selectIsLogined } from "@/stores/auth";
+import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
 
@@ -65,9 +65,7 @@ export function OptionsApp() {
             保存
           </Button>
         </div>
-        <p className="mt-1 text-xs text-(--color-muted-foreground)">
-          默认：{DEFAULT_API_URL}
-        </p>
+        <p className="mt-1 text-xs text-(--color-muted-foreground)">默认：{DEFAULT_API_URL}</p>
       </Section>
 
       <Section title="外观">
@@ -85,15 +83,26 @@ export function OptionsApp() {
         </div>
       </Section>
 
+      <Section title="通知" desc="未读时在工具栏图标右上点亮红点；可选额外弹出系统桌面通知">
+        <ToggleRow
+          label="未读角标"
+          on={prefs.notificationsEnabled}
+          onChange={(v) => void setPrefs({ notificationsEnabled: v })}
+        />
+        <ToggleRow
+          label="桌面通知"
+          desc="收到新消息时在系统通知中心弹出"
+          on={prefs.notificationsVisible}
+          disabled={!prefs.notificationsEnabled}
+          onChange={(v) => void setPrefs({ notificationsVisible: v })}
+        />
+      </Section>
+
       <Separator />
 
       {isLogined && (
         <Section title="账号">
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => setLogoutOpen(true)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => setLogoutOpen(true)}>
             <LogOut className="mr-1 h-3.5 w-3.5" /> 退出登录
           </Button>
         </Section>
@@ -129,5 +138,48 @@ function Section({
       </div>
       <div className="flex flex-col gap-2">{children}</div>
     </section>
+  );
+}
+
+function ToggleRow({
+  label,
+  desc,
+  on,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  desc?: string;
+  on: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col">
+        <span className={`text-sm ${disabled ? "text-(--color-muted-foreground)" : ""}`}>
+          {label}
+        </span>
+        {desc && <span className="text-xs text-(--color-muted-foreground)">{desc}</span>}
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          size="sm"
+          variant={on ? "default" : "outline"}
+          disabled={disabled}
+          onClick={() => onChange(true)}
+        >
+          开
+        </Button>
+        <Button
+          size="sm"
+          variant={!on ? "default" : "outline"}
+          disabled={disabled}
+          onClick={() => onChange(false)}
+        >
+          关
+        </Button>
+      </div>
+    </div>
   );
 }

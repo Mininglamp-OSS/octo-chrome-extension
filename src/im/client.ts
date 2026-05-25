@@ -171,9 +171,14 @@ const pendingByClientSeq = new Map<
 export function setupIm(): void {
   if (setupDone) return;
   const sdk = WKSDK.shared();
-  // deviceFlag: 0=app, 1=web, 2=pc。SDK 默认 1 (web)；但用户可能同时开
-  // octo-web 网页 + 本扩展，同一 (uid, token, deviceFlag) 服务端只允许一个连接，
-  // 后到的会被秒踢 1006。把扩展标成 2 (pc) 跟 web 端错开槽位，两端可并存。
+  // deviceFlag: 0=app, 1=web, 2=pc。SDK 默认 1 (web)。
+  //
+  // 必须和 OIDC 登录时 ?flag= 一致（见 src/background/oidc.ts:48 → flag=2），
+  // 因为 WuKongIM 服务端把 (uid, device_flag, token) 当查找键签发 token，WS connect
+  // 用不同 flag 会查不到 token 直接静默 close（1006，无 CONNACK）。
+  //
+  // 同 (uid, deviceFlag) 会互踢，所以 offscreen（src/entrypoints/offscreen/main.ts）
+  // 也用 2，与 sidepanel 走互斥调度，由 background 协调，不同时跑。
   sdk.config.deviceFlag = 2;
   // 暴露到 window 方便 DevTools Console 调试：WKSDK.shared().config / connectManager.status
   if (typeof window !== "undefined") {
