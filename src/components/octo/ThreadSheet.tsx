@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useChannelMessages } from "@/im/hooks/useChannelMessages";
 import { useThreadStore } from "@/stores/thread";
@@ -30,8 +31,8 @@ export function ThreadSheet() {
         <div className="min-h-0 flex-1">
           {!current && null}
           {current && loading && (
-            <div className="flex h-full items-center justify-center text-sm text-(--color-muted-foreground)">
-              加载历史…
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-(--color-muted-foreground)" />
             </div>
           )}
           {current && !loading && error && (

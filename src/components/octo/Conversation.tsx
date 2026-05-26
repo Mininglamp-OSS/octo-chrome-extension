@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { useChannelInfo } from "@/api/queries/channels";
 import { useChannelMembers } from "@/api/queries/members";
 import { ChannelType } from "@/const/channel";
@@ -58,8 +59,8 @@ export function Conversation() {
 
       <div className="min-h-0 flex-1">
         {loading && (
-          <div className="flex h-full items-center justify-center text-sm text-(--color-muted-foreground)">
-            加载历史…
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-(--color-muted-foreground)" />
           </div>
         )}
         {!loading && error && (

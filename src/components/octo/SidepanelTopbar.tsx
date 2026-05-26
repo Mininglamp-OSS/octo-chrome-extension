@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Pin, Settings as SettingsIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSpaces } from "@/api/queries/spaces";
 import { useAddPinned, useRemovePinned, usePinned } from "@/api/queries/pinned";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,17 @@ import { SettingsPopoverContent } from "./SettingsPopoverContent";
 export function SidepanelTopbar() {
   const currentId = useSpaceStore(selectCurrentSpaceId);
   const switchSpace = useSpaceStore((s) => s.switchSpace);
+  const hydrated = useSpaceStore((s) => s.hydrated);
   const { data: spaces } = useSpaces();
+
+  // 首次打开：若 currentSpaceId 无效（为空或不在列表中），自动选中第一个 space
+  useEffect(() => {
+    if (!hydrated || !spaces || spaces.length === 0) return;
+    const valid = currentId && spaces.some((s) => s.space_id === currentId);
+    if (!valid && spaces[0]) {
+      void switchSpace(spaces[0].space_id);
+    }
+  }, [hydrated, spaces, currentId, switchSpace]);
   const [open, setOpen] = useState(false);
   const current = spaces?.find((s) => s.space_id === currentId);
   const hasMultiple = (spaces?.length ?? 0) > 1;
