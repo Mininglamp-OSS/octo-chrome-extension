@@ -21,9 +21,14 @@ describe("buildCmdkMessageText", () => {
     expect(content).toBe("> 来自 🌐 [Example](https://example.com/p)\n> \n> hello\n> world");
   });
 
-  it("skipQuotedBody：仅来源行 + user input", () => {
+  it("skipQuotedBody：仅 user input（来源 + 选段都已写入 md 文件，不复述）", () => {
     const { content } = buildCmdkMessageText("see file", ctx, { skipQuotedBody: true });
-    expect(content).toBe("> 来自 🌐 [Example](https://example.com/p)\n\nsee file");
+    expect(content).toBe("see file");
+  });
+
+  it("skipQuotedBody 且无用户输入：返回空串", () => {
+    const { content } = buildCmdkMessageText("", ctx, { skipQuotedBody: true });
+    expect(content).toBe("");
   });
 
   it("无 url 时仅 quote 选段", () => {

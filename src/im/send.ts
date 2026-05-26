@@ -1,5 +1,9 @@
-import { MessageContentType } from "@/const/message";
+import { Channel } from "wukongimjssdk";
+import { MessageContentType, MessageReasonCode } from "@/const/message";
+import { isImConnected, onImMessageUpdated, sendImMessage as sdkSendImMessage } from "@/im/client";
 import { imSendMessage } from "@/im/proxy";
+import { ImNotConnectedError, REASON_TIMEOUT, reasonCodeToMessage } from "@/im/sendError";
+import { rehydrateContent } from "@/im/serialize";
 import { getImageDimensions, uploadAttachment } from "@/im/upload";
 import type { FileContent } from "@/messages/file";
 import type { ImageContent } from "@/messages/image";
@@ -66,6 +70,65 @@ export async function sendFile(
     channelId,
     channelType,
     content: { type: MessageContentType.file, data },
+  });
+}
+
+/**
+ * 发文件并等服务端 sendack 回填 messageId/messageSeq。
+ *
+ * 用于「先发附件再发引用消息」场景（如 cmdk 长选区）：
+ * 普通 sendFile 拿到的是 stub messageID="0"，服务端确认前 reply 没法指过去；
+ * 这里走 SDK 直发 + onImMessageUpdated 等 sendack，拿到真实 ack 后再返回。
+ */
+export interface SendFileAckResult {
+  messageId: string;
+  messageSeq: number;
+  fileContent: FileContent;
+}
+
+export async function sendFileAndWaitAck(
+  channelId: string,
+  channelType: number,
+  file: File,
+  timeoutMs = 30_000,
+): Promise<SendFileAckResult> {
+  if (!isImConnected()) throw new ImNotConnectedError();
+
+  const { url } = await uploadAttachment(file, channelId, channelType);
+  const dot = file.name.lastIndexOf(".");
+  const fileContent: FileContent = {
+    name: file.name,
+    extension: dot > 0 ? file.name.slice(dot + 1) : "",
+    size: file.size,
+    url,
+  };
+
+  const sdkContent = rehydrateContent({ type: MessageContentType.file, data: fileContent });
+  const channel = new Channel(channelId, channelType);
+  const stub = await sdkSendImMessage(sdkContent, channel);
+  const targetClientMsgNo = stub.clientMsgNo;
+
+  return await new Promise<SendFileAckResult>((resolve, reject) => {
+    let unsubscribe: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      unsubscribe?.();
+      reject(new Error(reasonCodeToMessage(REASON_TIMEOUT)));
+    }, timeoutMs);
+
+    unsubscribe = onImMessageUpdated((ev) => {
+      if (ev.clientMsgNo !== targetClientMsgNo) return;
+      clearTimeout(timer);
+      unsubscribe?.();
+      if (ev.reasonCode !== MessageReasonCode.reasonSuccess) {
+        reject(new Error(reasonCodeToMessage(ev.reasonCode)));
+        return;
+      }
+      resolve({
+        messageId: ev.messageId,
+        messageSeq: ev.messageSeq,
+        fileContent,
+      });
+    });
   });
 }
 

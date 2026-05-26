@@ -28,7 +28,8 @@ function quoteLines(text: string): string {
  *     > {selectedText 多行变 > 前缀}
  *
  *     {用户输入}
- * - skipQuotedBody=true（长选段已写入 .md 附件时）：仅留来源行 + 用户输入，不复述选段
+ * - skipQuotedBody=true（长选段已写入 .md 附件时）：仅留用户输入；来源行 + 选段全部不复述
+ *   （来源已写入 .md 首行，引用消息会指向该文件，不必再重复）
  * - 缺 url 时只引用 selectedText；selectedText 也无时仅返回用户输入
  */
 export function buildCmdkMessageText(
@@ -44,15 +45,17 @@ export function buildCmdkMessageText(
 
   const blocks: string[] = [];
 
-  if (url) {
-    const sourceLine = `来自 ${SOURCE_ICON} [${label}](${url})`;
-    if (!skipBody && sel) {
-      blocks.push(`> ${sourceLine}\n> \n${quoteLines(sel)}`);
-    } else {
-      blocks.push(`> ${sourceLine}`);
+  if (!skipBody) {
+    if (url) {
+      const sourceLine = `来自 ${SOURCE_ICON} [${label}](${url})`;
+      if (sel) {
+        blocks.push(`> ${sourceLine}\n> \n${quoteLines(sel)}`);
+      } else {
+        blocks.push(`> ${sourceLine}`);
+      }
+    } else if (sel) {
+      blocks.push(quoteLines(sel));
     }
-  } else if (!skipBody && sel) {
-    blocks.push(quoteLines(sel));
   }
 
   if (trimmed) blocks.push(trimmed);

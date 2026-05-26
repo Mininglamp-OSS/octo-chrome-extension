@@ -13,9 +13,11 @@ import {
   type MessageInputCoreSubmitPayload,
 } from "@/components/composer/MessageInputCore";
 import { ChannelType } from "@/const/channel";
-import { sendFile, sendImage, sendText } from "@/im/send";
+import { MessageContentType } from "@/const/message";
+import { sendFile, sendFileAndWaitAck, sendImage, sendText } from "@/im/send";
 import { sendMessage } from "@/platform/messaging";
 import { cmdkLastTargetStorage } from "@/platform/storage";
+import { selectName, selectUID, useAuthStore } from "@/stores/auth";
 
 interface CmdkComposerProps {
   picked: PickedTarget | null;
@@ -42,6 +44,8 @@ export const CmdkComposer = forwardRef<CmdkComposerHandle, CmdkComposerProps>(fu
   const { data: members } = useChannelMembers({
     channelId: isGroup ? picked.channelId : null,
   });
+  const myUid = useAuthStore(selectUID);
+  const myName = useAuthStore(selectName);
   const coreRef = useRef<MessageInputCoreHandle | null>(null);
   const disabled = !picked;
   const app = resolveApp(ctx.pageUrl, ctx.hostname);
@@ -74,26 +78,54 @@ export const CmdkComposer = forwardRef<CmdkComposerHandle, CmdkComposerProps>(fu
       channelType: picked.channelType,
     }).catch(() => {});
 
-    // ② 长选区（>500 字）转 .md 附件
-    const filesToSend = [...attachments];
-    if (longSel) filesToSend.push(buildSelectionMarkdownFile(ctx));
-
-    // ③ 拼文本（quote 头 + 用户输入；长选区时跳过原文 body）
-    const built = buildCmdkMessageText(text.trim(), ctx, { skipQuotedBody: longSel });
-
-    // ④ 并发发送，12s 超时兜底
-    const tasks: Promise<unknown>[] = filesToSend.map((f) => {
-      const send = f.type.startsWith("image/")
-        ? sendImage(picked.channelId, picked.channelType, f)
-        : sendFile(picked.channelId, picked.channelType, f);
-      return withSendAck(send);
-    });
-    if (built.content) {
-      tasks.push(withSendAck(sendText(picked.channelId, picked.channelType, built.content)));
-    }
+    const trimmed = text.trim();
+    const hasText = trimmed !== "";
 
     try {
-      await Promise.all(tasks);
+      // ② 普通附件：图片走 sendImage，其他走 sendFile，并发即可
+      const attachTasks: Promise<unknown>[] = attachments.map((f) => {
+        const send = f.type.startsWith("image/")
+          ? sendImage(picked.channelId, picked.channelType, f)
+          : sendFile(picked.channelId, picked.channelType, f);
+        return withSendAck(send);
+      });
+
+      if (longSel) {
+        // ③ 长选区：先发 .md 文件并等 sendack（拿真实 messageId/messageSeq），
+        //   再用 ReplyInfo 把用户输入作为引用消息指过去；与 mirror CmdKApp 同款。
+        const mdFile = buildSelectionMarkdownFile(ctx);
+        // 普通附件不阻塞 md 文件 ack；md 文件 ack 不到拿不到 reply 目标
+        await Promise.all(attachTasks);
+        const fileAck = await withSendAck(
+          sendFileAndWaitAck(picked.channelId, picked.channelType, mdFile),
+        );
+
+        if (hasText) {
+          // 引用消息正文：跳过原文 body（已写入 md 首行的「来自 …」），仅留用户输入
+          const built = buildCmdkMessageText(trimmed, ctx, { skipQuotedBody: true });
+          if (built.content) {
+            const replyInfo = {
+              messageId: fileAck.messageId,
+              messageSeq: fileAck.messageSeq,
+              fromUid: myUid ?? "",
+              fromName: myName ?? "",
+              digest: "[文件]",
+              content: { type: MessageContentType.file, data: fileAck.fileContent },
+            };
+            await withSendAck(
+              sendText(picked.channelId, picked.channelType, built.content, { replyInfo }),
+            );
+          }
+        }
+      } else {
+        // ④ 短选区：附件 + 文本并发，保留原行为
+        const built = buildCmdkMessageText(trimmed, ctx);
+        const tasks = [...attachTasks];
+        if (built.content) {
+          tasks.push(withSendAck(sendText(picked.channelId, picked.channelType, built.content)));
+        }
+        await Promise.all(tasks);
+      }
     } catch (err) {
       toast.error(getSendErrorMessage(err));
       throw err;
