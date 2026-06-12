@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { usePreferencesStore } from "@/stores/preferences";
+import { validateApiUrl } from "@/utils/apiUrlGuard";
 import { extractErrorMsg } from "@/utils/extractErrorMsg";
 
 export function OptionsApp() {
@@ -23,16 +24,33 @@ export function OptionsApp() {
 
   const [apiUrlDraft, setApiUrlDraft] = useState(prefs.apiUrl);
   const [logoutOpen, setLogoutOpen] = useState(false);
+  // 白名单外的 https 地址需二次确认才保存；暂存待确认的地址。
+  const [untrustedUrl, setUntrustedUrl] = useState<string | null>(null);
   const logout = useLogout();
+
+  async function persistApiUrl(value: string): Promise<void> {
+    await setPrefs({ apiUrl: value });
+    toast.success("API 地址已保存，下次连接时生效");
+  }
 
   async function saveApiUrl(): Promise<void> {
     const trimmed = apiUrlDraft.trim();
-    if (trimmed && !/^https?:\/\//.test(trimmed)) {
-      toast.error("URL 必须以 http(s):// 开头");
+    // 留空 = 使用默认地址，直接保存。
+    if (!trimmed) {
+      await persistApiUrl("");
       return;
     }
-    await setPrefs({ apiUrl: trimmed });
-    toast.success("API 地址已保存，下次连接时生效");
+    const result = validateApiUrl(trimmed);
+    if (!result.ok) {
+      toast.error(result.reason);
+      return;
+    }
+    if (!result.trusted) {
+      // 白名单外地址：弹二次确认，确认后才落库。
+      setUntrustedUrl(trimmed);
+      return;
+    }
+    await persistApiUrl(trimmed);
   }
 
   async function doLogout(): Promise<void> {
@@ -116,6 +134,21 @@ export function OptionsApp() {
         confirmText="退出"
         variant="destructive"
         onConfirm={doLogout}
+      />
+
+      <ConfirmDialog
+        open={untrustedUrl !== null}
+        onOpenChange={(o) => {
+          if (!o) setUntrustedUrl(null);
+        }}
+        title="确认使用非可信服务器？"
+        description="该地址不在可信列表中，登录凭证将被发送到此服务器。请确认你信任该地址再继续。"
+        confirmText="仍然保存"
+        variant="destructive"
+        onConfirm={async () => {
+          if (untrustedUrl !== null) await persistApiUrl(untrustedUrl);
+          setUntrustedUrl(null);
+        }}
       />
     </main>
   );
