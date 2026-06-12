@@ -24,7 +24,7 @@ export default defineUnlistedScript(() => {
         pageTitle: document.title,
         pageUrl: location.href,
       },
-      "*",
+      window.location.origin,
     );
   }
 

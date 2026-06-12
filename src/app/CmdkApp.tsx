@@ -25,11 +25,23 @@ import {
   stripSpacePrefix,
 } from "@/utils/avatar";
 import { cn } from "@/utils/cn";
+import { isFromWindow, originFromReferrer } from "@/utils/messageGuards";
 
 const READY_MSG = "CMDK_READY";
 const CONTEXT_MSG = "CMDK_CONTEXT";
 const DONE_MSG = "CMDK_DONE";
 const LONG_QUOTE_THRESHOLD = 500;
+
+/**
+ * 统一向父帧（CmdKOverlay）投递消息：targetOrigin 用 document.referrer 推导的
+ * 父帧 origin，杜绝通配广播。referrer 为空时不发送（cmdk iframe 恒由父页面加载，
+ * 正常恒有值），绝不退化为通配。
+ */
+function postToParent(message: unknown): void {
+  const parentOrigin = originFromReferrer(document.referrer);
+  if (!parentOrigin) return;
+  window.parent?.postMessage(message, parentOrigin);
+}
 
 const EMPTY_CTX: PanelContext = {
   selectedText: "",
@@ -56,7 +68,7 @@ export function CmdkApp() {
   const isLogined = useAuthStore(selectIsLogined);
 
   function notifyParentClose(): void {
-    window.parent?.postMessage({ type: DONE_PARENT_MSG }, "*");
+    postToParent({ type: DONE_PARENT_MSG });
   }
 
   // Esc 关闭 + 通知 overlay 拆 iframe（无论登录与否都需要）
@@ -202,13 +214,18 @@ function CmdkAppAuthed() {
   // 1) 接收 parent 的初始 context；2) 通知 parent 就绪
   useEffect(() => {
     function onMessage(e: MessageEvent): void {
+      // 来源校验：overlay 跑在 <all_urls>，宿主 origin 不可静态白名单，
+      // 用 source 身份（必须来自父帧）+ referrer 推导 origin 双重拦截恶意兄弟 iframe。
+      if (!isFromWindow(e.source, window.parent)) return;
+      const parentOrigin = originFromReferrer(document.referrer);
+      if (parentOrigin && e.origin !== parentOrigin) return;
       const data = (e.data ?? {}) as { type?: string; payload?: PanelContext };
       if (data.type === CONTEXT_MSG && data.payload) {
         setCtx({ ...EMPTY_CTX, ...data.payload });
       }
     }
     window.addEventListener("message", onMessage);
-    window.parent?.postMessage({ type: READY_MSG }, "*");
+    postToParent({ type: READY_MSG });
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
@@ -221,7 +238,7 @@ function CmdkAppAuthed() {
       toast.success(message, { duration: 1600 });
     }
     setClosing(true);
-    window.parent?.postMessage({ type: DONE_MSG }, "*");
+    postToParent({ type: DONE_MSG });
   }
 
   useEffect(() => {
