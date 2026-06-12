@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isFromWindow } from "@/utils/messageGuards";
 import { SelectionHint } from "./SelectionHint";
 
 interface PanelContext {
@@ -117,12 +118,22 @@ export function CmdKOverlay() {
 
   // 与 iframe 内的 CmdkApp 双向通信
   useEffect(() => {
+    // cmdk iframe 是扩展 origin（chrome-extension://<id>）。向其投递 context 时
+    // 用该 origin 而非通配 targetOrigin，避免敏感选区被宿主页或恶意 iframe 截获。
+    const extensionOrigin = new URL(browser.runtime.getURL("/")).origin;
     function onMsg(e: MessageEvent): void {
+      // 来源校验：只接受本 iframe 自身（扩展 origin）发回的 READY/DONE，
+      // 拦截宿主页脚本或兄弟 iframe 伪造的 DONE（否则可提前拆面板）。
+      if (!isFromWindow(e.source, iframeRef.current?.contentWindow) || e.origin !== extensionOrigin)
+        return;
       const data = (e.data ?? {}) as { type?: string };
       if (data.type === READY_MSG) {
         const ctx = pendingCtxRef.current;
         if (ctx && iframeRef.current?.contentWindow) {
-          iframeRef.current.contentWindow.postMessage({ type: CONTEXT_MSG, payload: ctx }, "*");
+          iframeRef.current.contentWindow.postMessage(
+            { type: CONTEXT_MSG, payload: ctx },
+            extensionOrigin,
+          );
         }
       } else if (data.type === DONE_MSG) {
         // 收到关闭信号：iframe 立即透事件，让用户能继续操作页面，

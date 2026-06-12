@@ -1,4 +1,5 @@
 import { sendMessage } from "@/platform/messaging";
+import { isSameWindowMessage } from "@/utils/messageGuards";
 
 const SOURCE = "octo-qq-doc";
 
@@ -27,6 +28,9 @@ export default defineContentScript({
 
     // 监听 main-world 抛出的选区数据，转发给 background / sidepanel
     window.addEventListener("message", (e: MessageEvent) => {
+      // 来源校验：只接受本帧 main-world 注入脚本同源抛出的消息，
+      // 拦截恶意页面脚本 / 跨源 iframe 伪造的选区数据。
+      if (!isSameWindowMessage(e.source, e.origin, window, location.origin)) return;
       const data = e.data as QQDocSelectionMsg | null;
       if (!data || data.source !== SOURCE) return;
       if (data.cmd === "selectionChanged") {
