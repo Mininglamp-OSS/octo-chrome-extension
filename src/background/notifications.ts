@@ -108,10 +108,10 @@ function setupImSlotClaimWatch(): void {
   // setInterval 随之失效、不再续命（badge.ts 同款认知）；alarms 是 MV3 下唯一能
   // 在 SW 休眠后仍按时唤醒 SW 的 durable 定时器。alarm 触发时清掉过期 claim →
   // 写 null → 上面 watch 重跑 → bringUpOffscreenIfLoggedIn 恢复后台连接。
-  // periodInMinutes 用 1（不是 0.5）：Chrome 生产环境对 alarms 最小周期钳到 1 分钟，
-  // 写 0.5 在 dev 下能跑、生产会被静默钳到 1，代码意图与实际不符。这里只是过期 claim
-  // 的 durable 兜底（前台 expiryTimer 已覆盖 sidepanel 开着的常见场景），1 分钟可接受。
-  browser.alarms.create(IM_SLOT_CLEANUP_ALARM, { periodInMinutes: 1 });
+  // periodInMinutes 用 0.5（30s）：这是 Chrome 生产环境 alarms 的最小被遵守周期
+  // （低于 0.5 才会被忽略+警告），30s 合法。这里只是过期 claim 的 durable 兜底，
+  // 前台 expiryTimer 已覆盖 sidepanel 开着的常见场景，30s 已足够及时。
+  browser.alarms.create(IM_SLOT_CLEANUP_ALARM, { periodInMinutes: 0.5 });
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== IM_SLOT_CLEANUP_ALARM) return;
     void imSlotClaimStorage.getValue().then(async (claim) => {

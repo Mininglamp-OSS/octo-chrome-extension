@@ -34,6 +34,15 @@ let statusListener: ((s: ConnectStatus, code?: number) => void) | null = null;
 let sendackListener: ((p: SendackPacket) => void) | null = null;
 let cmdListener: ((m: Message) => void) | null = null;
 
+/** 不可逆 token 指纹（djb2）：同 token 得同短码，便于日志里比对 store/sdk 是否一致，
+ *  又不泄漏任何 token 字符。仅供排错观测，非密码学用途。 */
+function tokenFingerprint(token: string | undefined): string {
+  if (!token) return "(empty)";
+  let h = 5381;
+  for (let i = 0; i < token.length; i++) h = ((h << 5) + h + token.charCodeAt(i)) | 0;
+  return `fp:${(h >>> 0).toString(36)}/${token.length}`;
+}
+
 /** 中央 onReceive 派发器：从 registry 找模块的 onReceive 钩子调用，错误隔离 */
 function dispatchOnReceive(m: Message): void {
   const mod = getModuleOrUnknown(m.content.contentType);
@@ -196,10 +205,7 @@ export function setupIm(): void {
     console.info("[octo:im] connectAddrCallback fired", {
       storeUid: auth.uid,
       sdkUid: sdk.config.uid,
-      sdkTokenLen: sdk.config.token?.length ?? 0,
-      sdkTokenHead: sdk.config.token
-        ? `${sdk.config.token.slice(0, 6)}…${sdk.config.token.slice(-4)}`
-        : "(empty)",
+      sdkTokenFp: tokenFingerprint(sdk.config.token),
     });
     void resolveAddrs(auth.uid)
       .then((addrs) => {
@@ -372,8 +378,7 @@ export function startIm(opts: ImBootOptions = {}): void {
       sdk.config.token = token;
       console.info("[octo:im] connectManager.connect()", {
         uid,
-        tokenLen: token.length,
-        tokenHead: `${token.slice(0, 6)}…${token.slice(-4)}`,
+        tokenFp: tokenFingerprint(token),
       });
       sdk.connectManager.connect();
       connectStarted = true;
