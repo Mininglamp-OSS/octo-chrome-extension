@@ -1,5 +1,5 @@
 import { browser } from "wxt/browser";
-import { CMDK_IM_SLOT_REFRESH_MS, isActiveImSlotClaim } from "@/im/slot";
+import { isActiveImSlotClaim } from "@/im/slot";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { clearAllNotifications, notify } from "@/platform/notifications";
 import { openSidePanel } from "@/platform/sidePanel";
@@ -31,12 +31,13 @@ import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen";
  */
 
 const SIDEPANEL_ACTIVE_TTL_MS = 5_000;
+/** 过期 cmdk slot claim 的 durable 清理 alarm 名 */
+const IM_SLOT_CLEANUP_ALARM = "im-slot-cleanup";
 
 let lastSidepanelActiveAt = 0;
 let lastSidepanelHasUnread = false;
 let lastOffscreenHasUnread = false;
 let ttlCheckTimer: ReturnType<typeof setInterval> | null = null;
-let claimCheckTimer: ReturnType<typeof setInterval> | null = null;
 // 角标总开关缓存：关闭时所有 hasUnread 信号都被吞掉（避免 sidepanel 开启时再次点亮红点）
 let badgeEnabled = true;
 
@@ -98,13 +99,23 @@ function setupImSlotClaimWatch(): void {
     }
     void bringUpOffscreenIfLoggedIn();
   });
-  if (claimCheckTimer) return;
-  claimCheckTimer = setInterval(() => {
+
+  // claim 过期自愈：cmdk 非正常退出（崩溃/强杀/浏览器关闭）时 releaseImSlot IPC
+  // 不会发、unmount cleanup 也不跑 → claim 残留在 storage。它逻辑上过期后，
+  // storage 本身不再变化，watch 永不重触发 → offscreen/sidepanel 会被永久 block。
+  //
+  // 必须用 chrome.alarms 而非 setInterval：MV3 service worker ~30s idle 即被杀，
+  // setInterval 随之失效、不再续命（badge.ts 同款认知）；alarms 是 MV3 下唯一能
+  // 在 SW 休眠后仍按时唤醒 SW 的 durable 定时器。alarm 触发时清掉过期 claim →
+  // 写 null → 上面 watch 重跑 → bringUpOffscreenIfLoggedIn 恢复后台连接。
+  browser.alarms.create(IM_SLOT_CLEANUP_ALARM, { periodInMinutes: 0.5 });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== IM_SLOT_CLEANUP_ALARM) return;
     void imSlotClaimStorage.getValue().then(async (claim) => {
       if (!claim || isActiveImSlotClaim(claim)) return;
       await imSlotClaimStorage.setValue(null);
     });
-  }, CMDK_IM_SLOT_REFRESH_MS);
+  });
 }
 
 export function setupNotifications(): void {

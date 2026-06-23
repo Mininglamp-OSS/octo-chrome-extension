@@ -126,16 +126,30 @@ export function AppBoot({
     if (!enableIm) return;
     if (claimImSlot) return;
     let cancelled = false;
+    // 本地 TTL 自愈：claim 是 active 时排一个定时器到它 expiresAt 那一刻重跑 apply。
+    // 否则 cmdk 非正常退出残留 claim 后，storage 不再变化、watch 不再触发，本进程
+    // 会一直 blockedByImSlot=true 把 IM stop 住——光靠 background alarm 清理有延迟
+    // 且依赖 SW 被唤醒；前台自己排一刀让 sidepanel 在 claim 过期瞬间立即恢复连接。
+    let expiryTimer: ReturnType<typeof setTimeout> | null = null;
     const apply = (claim: Awaited<ReturnType<typeof imSlotClaimStorage.getValue>>) => {
       if (cancelled) return;
+      if (expiryTimer) {
+        clearTimeout(expiryTimer);
+        expiryTimer = null;
+      }
       const blocked = isActiveImSlotClaim(claim);
       setBlockedByImSlot(blocked);
-      if (blocked) stopIm();
+      if (blocked) {
+        stopIm();
+        const ms = Math.max(0, (claim as { expiresAt: number }).expiresAt - Date.now());
+        expiryTimer = setTimeout(() => apply(claim), ms + 50);
+      }
     };
     void imSlotClaimStorage.getValue().then(apply);
     const unwatch = imSlotClaimStorage.watch(apply);
     return () => {
       cancelled = true;
+      if (expiryTimer) clearTimeout(expiryTimer);
       unwatch();
     };
   }, [claimImSlot, enableIm]);

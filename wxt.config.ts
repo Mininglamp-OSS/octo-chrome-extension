@@ -19,7 +19,7 @@ export default defineConfig({
     description: "",
     side_panel: { default_path: "sidepanel.html" },
     options_ui: { page: "options.html", open_in_tab: true },
-    permissions: ["storage", "sidePanel", "scripting", "offscreen", "notifications"],
+    permissions: ["storage", "sidePanel", "scripting", "offscreen", "notifications", "alarms"],
     host_permissions: ["<all_urls>"],
     web_accessible_resources: [
       {
