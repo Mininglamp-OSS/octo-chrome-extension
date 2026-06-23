@@ -1,4 +1,6 @@
 import { browser } from "wxt/browser";
+import { isActiveImSlotClaim } from "@/im/slot";
+import { imSlotClaimStorage } from "@/platform/storage";
 
 /**
  * Offscreen document 生命周期管理。
@@ -36,6 +38,7 @@ async function hasDocument(): Promise<boolean> {
 }
 
 export async function ensureOffscreenDocument(): Promise<void> {
+  if (isActiveImSlotClaim(await imSlotClaimStorage.getValue())) return;
   if (creating) return creating;
   if (await hasDocument()) return;
 

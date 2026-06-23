@@ -1,7 +1,8 @@
 import { browser } from "wxt/browser";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { openSidePanel } from "@/platform/sidePanel";
-import { pendingConversationStorage } from "@/platform/storage";
+import { imSlotClaimStorage, pendingConversationStorage } from "@/platform/storage";
+import { closeOffscreenDocument } from "./offscreen";
 
 export function setupHandlers(): void {
   // 用户点工具栏图标 → 打开 sidepanel
@@ -37,5 +38,16 @@ export function setupHandlers(): void {
   onMessage("getAuthState", async () => {
     const value = await (await import("@/platform/storage")).authStorage.getValue();
     return { auth: value };
+  });
+
+  onMessage("claimImSlot", async ({ data }) => {
+    await imSlotClaimStorage.setValue(data.claim);
+    await closeOffscreenDocument();
+  });
+
+  onMessage("releaseImSlot", async ({ data }) => {
+    const current = await imSlotClaimStorage.getValue();
+    if (current?.id !== data.id) return;
+    await imSlotClaimStorage.setValue(null);
   });
 }

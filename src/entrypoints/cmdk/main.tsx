@@ -11,7 +11,7 @@ if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <Providers>
-      <AppBoot>
+      <AppBoot claimImSlot>
         <CmdkApp />
       </AppBoot>
     </Providers>

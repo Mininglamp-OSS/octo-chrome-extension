@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { setApiUrl } from "@/api/client";
 import { DEFAULT_API_URL } from "@/api/endpoints";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { setupIm, startIm, stopIm } from "@/im/client";
+import {
+  CMDK_IM_SLOT_REFRESH_MS,
+  createCmdkImSlotClaim,
+  isActiveImSlotClaim,
+} from "@/im/slot";
 import { registerAllRenders } from "@/messages/renders";
+import { sendMessage } from "@/platform/messaging";
+import { imSlotClaimStorage } from "@/platform/storage";
 import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -24,7 +31,15 @@ registerAllRenders();
  *
  * children 在 hydrate 完成前不渲染，避免闪烁。
  */
-export function AppBoot({ children }: { children: React.ReactNode }) {
+export function AppBoot({
+  children,
+  claimImSlot = false,
+  enableIm = true,
+}: {
+  children: React.ReactNode;
+  claimImSlot?: boolean;
+  enableIm?: boolean;
+}) {
   useApplyTheme();
   const [ready, setReady] = useState(false);
 
@@ -36,6 +51,10 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
   const subSpace = useSpaceStore((s) => s.subscribe);
   const subPrefs = usePreferencesStore((s) => s.subscribe);
   const apiUrl = usePreferencesStore((s) => s.prefs.apiUrl);
+  const [imSlotReady, setImSlotReady] = useState(!claimImSlot);
+  const [blockedByImSlot, setBlockedByImSlot] = useState(false);
+  const imSlotClaimIdRef = useRef<string | null>(null);
+  const imSlotMountedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +89,57 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
     setApiUrl(apiUrl?.trim() || DEFAULT_API_URL);
   }, [apiUrl]);
 
+  useEffect(() => {
+    if (!claimImSlot) return;
+    const id = imSlotClaimIdRef.current ?? crypto.randomUUID();
+    imSlotClaimIdRef.current = id;
+    imSlotMountedRef.current = true;
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const claim = async () => {
+      const value = createCmdkImSlotClaim(id);
+      try {
+        await sendMessage("claimImSlot", { claim: value });
+      } catch {
+        await imSlotClaimStorage.setValue(value);
+      }
+      if (!cancelled) setImSlotReady(true);
+    };
+    void claim();
+    timer = setInterval(() => void claim(), CMDK_IM_SLOT_REFRESH_MS);
+    return () => {
+      cancelled = true;
+      imSlotMountedRef.current = false;
+      if (timer) clearInterval(timer);
+      setTimeout(() => {
+        if (imSlotMountedRef.current) return;
+        void sendMessage("releaseImSlot", { id }).catch(() => {
+          void imSlotClaimStorage.getValue().then((current) => {
+            if (current?.id === id) void imSlotClaimStorage.setValue(null);
+          });
+        });
+      }, 500);
+    };
+  }, [claimImSlot]);
+
+  useEffect(() => {
+    if (!enableIm) return;
+    if (claimImSlot) return;
+    let cancelled = false;
+    const apply = (claim: Awaited<ReturnType<typeof imSlotClaimStorage.getValue>>) => {
+      if (cancelled) return;
+      const blocked = isActiveImSlotClaim(claim);
+      setBlockedByImSlot(blocked);
+      if (blocked) stopIm();
+    };
+    void imSlotClaimStorage.getValue().then(apply);
+    const unwatch = imSlotClaimStorage.watch(apply);
+    return () => {
+      cancelled = true;
+      unwatch();
+    };
+  }, [claimImSlot, enableIm]);
+
   // 启动 IM 长连接 —— 必须在 hydrate 完成后（要 auth.token），且卸载时 stop。
   //
   // 不能只在 ready 翻转那一刻判断一次登录态：cmdk 是用户触发时才挂载的独立 iframe，
@@ -80,7 +150,8 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
   // 改为：ready 后先尝一次，并订阅 auth 变化，登录态从无到有时补连（startIm 内部
   // connectStarted 幂等，重复调用安全）。
   useEffect(() => {
-    if (!ready) return;
+    if (!enableIm) return;
+    if (!ready || !imSlotReady || blockedByImSlot) return;
     setupIm();
     const tryStart = () => {
       if (selectIsLogined(useAuthStore.getState())) startIm();
@@ -91,8 +162,8 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
       unsub();
       stopIm();
     };
-  }, [ready]);
+  }, [ready, enableIm, imSlotReady, blockedByImSlot]);
 
-  if (!ready) return null;
+  if (!ready || !imSlotReady) return null;
   return <>{children}</>;
 }

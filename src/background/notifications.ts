@@ -1,8 +1,14 @@
 import { browser } from "wxt/browser";
+import { CMDK_IM_SLOT_REFRESH_MS, isActiveImSlotClaim } from "@/im/slot";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { clearAllNotifications, notify } from "@/platform/notifications";
 import { openSidePanel } from "@/platform/sidePanel";
-import { authStorage, pendingConversationStorage, preferencesStorage } from "@/platform/storage";
+import {
+  authStorage,
+  imSlotClaimStorage,
+  pendingConversationStorage,
+  preferencesStorage,
+} from "@/platform/storage";
 import { setUnreadBadge } from "./badge";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen";
 
@@ -30,6 +36,7 @@ let lastSidepanelActiveAt = 0;
 let lastSidepanelHasUnread = false;
 let lastOffscreenHasUnread = false;
 let ttlCheckTimer: ReturnType<typeof setInterval> | null = null;
+let claimCheckTimer: ReturnType<typeof setInterval> | null = null;
 // 角标总开关缓存：关闭时所有 hasUnread 信号都被吞掉（避免 sidepanel 开启时再次点亮红点）
 let badgeEnabled = true;
 
@@ -49,6 +56,8 @@ function recomputeBadge(): void {
 }
 
 async function bringUpOffscreenIfLoggedIn(): Promise<void> {
+  if (sidepanelActive()) return;
+  if (isActiveImSlotClaim(await imSlotClaimStorage.getValue())) return;
   const auth = await authStorage.getValue();
   if (auth?.loggedIn) {
     await ensureOffscreenDocument();
@@ -81,8 +90,26 @@ function startTtlCheck(): void {
   }, 2_000);
 }
 
+function setupImSlotClaimWatch(): void {
+  imSlotClaimStorage.watch((claim) => {
+    if (isActiveImSlotClaim(claim)) {
+      void closeOffscreenDocument();
+      return;
+    }
+    void bringUpOffscreenIfLoggedIn();
+  });
+  if (claimCheckTimer) return;
+  claimCheckTimer = setInterval(() => {
+    void imSlotClaimStorage.getValue().then(async (claim) => {
+      if (!claim || isActiveImSlotClaim(claim)) return;
+      await imSlotClaimStorage.setValue(null);
+    });
+  }, CMDK_IM_SLOT_REFRESH_MS);
+}
+
 export function setupNotifications(): void {
   startTtlCheck();
+  setupImSlotClaimWatch();
 
   // 初始化 + 监听角标总开关
   void preferencesStorage.getValue().then((prefs) => {
