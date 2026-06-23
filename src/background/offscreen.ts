@@ -60,10 +60,22 @@ export async function ensureOffscreenDocument(): Promise<void> {
       creating = null;
     }
   })();
-  return creating;
+  await creating;
+
+  // create 完成后复检 claim：若 cmdk 的 claim 在 create 在途期间落地，它当时调的
+  // closeOffscreenDocument() 会先 await 这个 creating 再关，故通常已被关掉；但 claim
+  // 也可能由别的路径（storage 直写）落地、close 未被触发，这里再自查自关一刀兜底，
+  // 避免 offscreen 用 deviceFlag=2 连上、与持槽的 cmdk 互踢。
+  if (isActiveImSlotClaim(await imSlotClaimStorage.getValue())) {
+    await closeOffscreenDocument();
+  }
 }
 
 export async function closeOffscreenDocument(): Promise<void> {
+  // 先等 in-flight create 落地：否则 create 在途时 hasDocument() 仍是 false，
+  // close 会 early-return 漏关，随后 create 完成 → offscreen 连上 deviceFlag=2
+  // 与持槽 cmdk 互踢（TOCTOU）。await 后 hasDocument() 才反映真实状态。
+  if (creating) await creating;
   if (!(await hasDocument())) return;
   try {
     await chrome.offscreen.closeDocument();

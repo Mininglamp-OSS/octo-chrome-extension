@@ -53,6 +53,12 @@ export function AppBoot({
   const apiUrl = usePreferencesStore((s) => s.prefs.apiUrl);
   const [imSlotReady, setImSlotReady] = useState(!claimImSlot);
   const [blockedByImSlot, setBlockedByImSlot] = useState(false);
+  // 「当前 claim 是否已读出」门闩：blockedByImSlot 的初值是 false，但判断它要先异步
+  // getValue()。裸 sidepanel（!claimImSlot）若在这次读 resolve 前就跑 startIm
+  // (deviceFlag=2)，会在 cmdk 正持有有效 claim 时把 cmdk 连接踢掉。故只有真正走
+  // block-effect 的场景（enableIm && !claimImSlot）才需要等首读；其余（cmdk 自己
+  // 声明 claim、或 enableIm=false 不连）无需等，初值即 true，避免卡死。
+  const [imSlotStateReady, setImSlotStateReady] = useState(!(enableIm && !claimImSlot));
   const imSlotClaimIdRef = useRef<string | null>(null);
   const imSlotMountedRef = useRef(false);
 
@@ -145,7 +151,12 @@ export function AppBoot({
         expiryTimer = setTimeout(() => apply(claim), ms + 50);
       }
     };
-    void imSlotClaimStorage.getValue().then(apply);
+    void imSlotClaimStorage.getValue().then((claim) => {
+      apply(claim);
+      // 首读已 resolve：放行启动 gate（此前 startIm 被 imSlotStateReady 挡住，
+      // 避免在「claim 未知」窗口里抢连踢掉持槽的 cmdk）
+      if (!cancelled) setImSlotStateReady(true);
+    });
     const unwatch = imSlotClaimStorage.watch(apply);
     return () => {
       cancelled = true;
@@ -165,7 +176,7 @@ export function AppBoot({
   // connectStarted 幂等，重复调用安全）。
   useEffect(() => {
     if (!enableIm) return;
-    if (!ready || !imSlotReady || blockedByImSlot) return;
+    if (!ready || !imSlotReady || !imSlotStateReady || blockedByImSlot) return;
     setupIm();
     const tryStart = () => {
       if (selectIsLogined(useAuthStore.getState())) startIm();
@@ -176,7 +187,7 @@ export function AppBoot({
       unsub();
       stopIm();
     };
-  }, [ready, enableIm, imSlotReady, blockedByImSlot]);
+  }, [ready, enableIm, imSlotReady, imSlotStateReady, blockedByImSlot]);
 
   if (!ready || !imSlotReady) return null;
   return <>{children}</>;
