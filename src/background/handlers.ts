@@ -1,4 +1,5 @@
 import { browser } from "wxt/browser";
+import { shouldGrantClaim } from "@/im/slot";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { openSidePanel } from "@/platform/sidePanel";
 import { imSlotClaimStorage, pendingConversationStorage } from "@/platform/storage";
@@ -41,8 +42,13 @@ export function setupHandlers(): void {
   });
 
   onMessage("claimImSlot", async ({ data }) => {
+    // 单 owner 仲裁：已有他人的 active claim 时拒绝，防止两个 cmdk 实例（多 tab）
+    // 都抢到槽位、都连 deviceFlag=2 互踢。无 claim / 已过期 / 同 id 续期 → 放行。
+    const current = await imSlotClaimStorage.getValue();
+    if (!shouldGrantClaim(current, data.claim)) return false;
     await imSlotClaimStorage.setValue(data.claim);
     await closeOffscreenDocument();
+    return true;
   });
 
   onMessage("releaseImSlot", async ({ data }) => {

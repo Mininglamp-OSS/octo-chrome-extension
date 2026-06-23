@@ -82,8 +82,9 @@ export interface OctoProtocolMap {
   /** sidepanel 主动告知自身活跃状态 + 当前未读，背景以最新 active 源为准 */
   sidepanelBadgeSync(payload: { active: boolean; hasUnread: boolean }): void;
 
-  /** 临时独占 deviceFlag=2 的 IM 槽位（cmdk 短发期间用） */
-  claimImSlot(payload: { claim: ImSlotClaim }): void;
+  /** 临时独占 deviceFlag=2 的 IM 槽位（cmdk 短发期间用）。
+   *  返回是否抢到：已有他人 active claim 时拒绝（单 owner 仲裁，防多 cmdk 互踢）。 */
+  claimImSlot(payload: { claim: ImSlotClaim }): boolean;
   releaseImSlot(payload: { id: string }): void;
 }
 

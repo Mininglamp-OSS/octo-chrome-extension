@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { sendMessage } from "@/platform/messaging";
 import { SelectionHint } from "./SelectionHint";
 
 interface PanelContext {
@@ -11,6 +12,7 @@ interface PanelContext {
 const READY_MSG = "CMDK_READY";
 const CONTEXT_MSG = "CMDK_CONTEXT";
 const DONE_MSG = "CMDK_DONE";
+const SLOT_CLAIMED_MSG = "CMDK_SLOT_CLAIMED";
 const PLUGIN_CALL_TYPE = "OCTO_PLUGIN_CALL";
 const PLUGIN_CALL_SUB_SEND = "sendMessage";
 
@@ -28,6 +30,10 @@ export function CmdKOverlay() {
   const [open, setOpen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pendingCtxRef = useRef<PanelContext | null>(null);
+  // cmdk iframe 上报的 IM slot claim id。iframe 被本组件硬移除时其内部 React
+  // cleanup 不会执行（JS realm 同步销毁），releaseImSlot 永不从 iframe 内发出；
+  // 父帧在这里留存 id，拆 iframe 前主动释放，避免 claim 残留 ~60s 抑制后台通知。
+  const slotClaimIdRef = useRef<string | null>(null);
 
   const buildContext = useCallback(
     (text: string): PanelContext => ({
@@ -48,6 +54,12 @@ export function CmdKOverlay() {
   );
 
   const closePanel = useCallback(() => {
+    // 拆 iframe 前先释放 IM slot（iframe 内 cleanup 不会跑，必须父帧主动发）
+    const claimId = slotClaimIdRef.current;
+    if (claimId) {
+      void sendMessage("releaseImSlot", { id: claimId }).catch(() => {});
+      slotClaimIdRef.current = null;
+    }
     setOpen(false);
     iframeRef.current = null;
     pendingCtxRef.current = null;
@@ -118,12 +130,15 @@ export function CmdKOverlay() {
   // 与 iframe 内的 CmdkApp 双向通信
   useEffect(() => {
     function onMsg(e: MessageEvent): void {
-      const data = (e.data ?? {}) as { type?: string };
+      const data = (e.data ?? {}) as { type?: string; id?: string };
       if (data.type === READY_MSG) {
         const ctx = pendingCtxRef.current;
         if (ctx && iframeRef.current?.contentWindow) {
           iframeRef.current.contentWindow.postMessage({ type: CONTEXT_MSG, payload: ctx }, "*");
         }
+      } else if (data.type === SLOT_CLAIMED_MSG) {
+        // 暂存 cmdk 上报的 claim id，供 closePanel 拆 iframe 前释放
+        if (typeof data.id === "string") slotClaimIdRef.current = data.id;
       } else if (data.type === DONE_MSG) {
         // 收到关闭信号：iframe 立即透事件，让用户能继续操作页面，
         // 但延迟 1.8s 才真正卸载 —— 给 iframe 内 sonner Toaster

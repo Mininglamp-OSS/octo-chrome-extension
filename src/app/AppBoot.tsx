@@ -35,10 +35,13 @@ export function AppBoot({
   children,
   claimImSlot = false,
   enableIm = true,
+  onImSlotClaimed,
 }: {
   children: React.ReactNode;
   claimImSlot?: boolean;
   enableIm?: boolean;
+  /** claim 生成后回调出 id —— cmdk 用它把 id 传给父帧，父帧拆 iframe 前可靠释放 */
+  onImSlotClaimed?: (id: string) => void;
 }) {
   useApplyTheme();
   const [ready, setReady] = useState(false);
@@ -100,23 +103,40 @@ export function AppBoot({
     const id = imSlotClaimIdRef.current ?? crypto.randomUUID();
     imSlotClaimIdRef.current = id;
     imSlotMountedRef.current = true;
+    // 把 id 回调出去：cmdk 据此把 id 传给父帧 content script。iframe 被父帧硬移除时
+    // 本组件的 effect cleanup 不会跑（JS realm 同步销毁），deferred releaseImSlot
+    // 永不触发 → claim 残留到 TTL 才过期；父帧持有 id 即可在拆 iframe 前可靠释放。
+    onImSlotClaimed?.(id);
     let cancelled = false;
     let timer: ReturnType<typeof setInterval> | null = null;
     const claim = async () => {
       const value = createCmdkImSlotClaim(id);
+      let granted = true;
       try {
-        await sendMessage("claimImSlot", { claim: value });
+        // 单 owner 仲裁：另一个 cmdk 实例（多 tab）已持槽时 background 返回 false。
+        // 抢不到就不让本实例连 IM（imSlotReady 保持/置 false），避免两个 deviceFlag=2
+        // 连接互踢——这正是本 PR 要消除的故障。
+        granted = (await sendMessage("claimImSlot", { claim: value })) !== false;
       } catch {
+        // IPC 不通的极端情况：回退直写 storage，无从仲裁，按放行处理
         await imSlotClaimStorage.setValue(value);
       }
-      if (!cancelled) setImSlotReady(true);
+      if (!cancelled) setImSlotReady(granted);
     };
     void claim();
     timer = setInterval(() => void claim(), CMDK_IM_SLOT_REFRESH_MS);
+    // pagehide 兜底：用户直接关 tab（父帧 CmdKOverlay 一并卸载、来不及 release）时
+    // 尽力发一次 release。unload 期异步 IPC 不保证送达，故仅作 best-effort，最终
+    // 仍由 background alarm + TTL 兜底；正常关闭 cmdk 的可靠释放走父帧按 id release。
+    const onPageHide = () => {
+      void sendMessage("releaseImSlot", { id }).catch(() => {});
+    };
+    window.addEventListener("pagehide", onPageHide);
     return () => {
       cancelled = true;
       imSlotMountedRef.current = false;
       if (timer) clearInterval(timer);
+      window.removeEventListener("pagehide", onPageHide);
       setTimeout(() => {
         if (imSlotMountedRef.current) return;
         void sendMessage("releaseImSlot", { id }).catch(() => {
@@ -126,7 +146,7 @@ export function AppBoot({
         });
       }, 500);
     };
-  }, [claimImSlot]);
+  }, [claimImSlot, onImSlotClaimed]);
 
   useEffect(() => {
     if (!enableIm) return;
