@@ -320,7 +320,15 @@ export function setupIm(): void {
   sdk.chatManager.addCMDListener(cmdListener);
 
   // 连接状态变化时也告诉订阅者会话可能 stale（重连后会议列表要刷新）
-  statusListener = (status) => {
+  statusListener = (status, code) => {
+    // 把每次状态翻转都打出来——定位「发消息报未连接」必看：
+    // 是从未到过 Connected，还是 Connected 后又掉到 Disconnect/某 code。
+    console.info("[octo:im] connectStatus →", {
+      status,
+      statusName: ConnectStatus[status] ?? String(status),
+      reasonCode: code,
+      connected: sdk.connectManager.connected(),
+    });
     if (status === ConnectStatus.Connected) {
       fireConversationsStale();
     }

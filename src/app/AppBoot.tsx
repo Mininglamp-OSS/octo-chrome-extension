@@ -70,14 +70,25 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
     setApiUrl(apiUrl?.trim() || DEFAULT_API_URL);
   }, [apiUrl]);
 
-  // 启动 IM 长连接 —— 必须在 hydrate 完成后（要 auth.token），且 sidepanel 卸载时 stop
+  // 启动 IM 长连接 —— 必须在 hydrate 完成后（要 auth.token），且卸载时 stop。
+  //
+  // 不能只在 ready 翻转那一刻判断一次登录态：cmdk 是用户触发时才挂载的独立 iframe，
+  // 它的 hydrate 完成（ready=true）可能早于 auth storage 同步出登录态，导致 startIm
+  // 被 selectIsLogined 跳过后再也不重试 —— 表现为 sdk.config.uid/token 为空、
+  // connectManager 一直 Disconnect、发消息报「IM 未连接」。
+  //
+  // 改为：ready 后先尝一次，并订阅 auth 变化，登录态从无到有时补连（startIm 内部
+  // connectStarted 幂等，重复调用安全）。
   useEffect(() => {
     if (!ready) return;
     setupIm();
-    if (selectIsLogined(useAuthStore.getState())) {
-      startIm();
-    }
+    const tryStart = () => {
+      if (selectIsLogined(useAuthStore.getState())) startIm();
+    };
+    tryStart();
+    const unsub = useAuthStore.subscribe(tryStart);
     return () => {
+      unsub();
       stopIm();
     };
   }, [ready]);
