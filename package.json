@@ -2,7 +2,7 @@
   "name": "octo-ext",
   "description": "",
   "private": true,
-  "version": "1.0.0.19",
+  "version": "1.0.0.25",
   "type": "module",
   "scripts": {
     "dev": "wxt --port 5166",

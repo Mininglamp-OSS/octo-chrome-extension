@@ -34,6 +34,15 @@ let statusListener: ((s: ConnectStatus, code?: number) => void) | null = null;
 let sendackListener: ((p: SendackPacket) => void) | null = null;
 let cmdListener: ((m: Message) => void) | null = null;
 
+/** 不可逆 token 指纹（djb2）：同 token 得同短码，便于日志里比对 store/sdk 是否一致，
+ *  又不泄漏任何 token 字符。仅供排错观测，非密码学用途。 */
+function tokenFingerprint(token: string | undefined): string {
+  if (!token) return "(empty)";
+  let h = 5381;
+  for (let i = 0; i < token.length; i++) h = ((h << 5) + h + token.charCodeAt(i)) | 0;
+  return `fp:${(h >>> 0).toString(36)}/${token.length}`;
+}
+
 /** 中央 onReceive 派发器：从 registry 找模块的 onReceive 钩子调用，错误隔离 */
 function dispatchOnReceive(m: Message): void {
   const mod = getModuleOrUnknown(m.content.contentType);
@@ -196,10 +205,7 @@ export function setupIm(): void {
     console.info("[octo:im] connectAddrCallback fired", {
       storeUid: auth.uid,
       sdkUid: sdk.config.uid,
-      sdkTokenLen: sdk.config.token?.length ?? 0,
-      sdkTokenHead: sdk.config.token
-        ? `${sdk.config.token.slice(0, 6)}…${sdk.config.token.slice(-4)}`
-        : "(empty)",
+      sdkTokenFp: tokenFingerprint(sdk.config.token),
     });
     void resolveAddrs(auth.uid)
       .then((addrs) => {
@@ -320,7 +326,15 @@ export function setupIm(): void {
   sdk.chatManager.addCMDListener(cmdListener);
 
   // 连接状态变化时也告诉订阅者会话可能 stale（重连后会议列表要刷新）
-  statusListener = (status) => {
+  statusListener = (status, code) => {
+    // 把每次状态翻转都打出来——定位「发消息报未连接」必看：
+    // 是从未到过 Connected，还是 Connected 后又掉到 Disconnect/某 code。
+    console.info("[octo:im] connectStatus →", {
+      status,
+      statusName: ConnectStatus[status] ?? String(status),
+      reasonCode: code,
+      connected: sdk.connectManager.connected(),
+    });
     if (status === ConnectStatus.Connected) {
       fireConversationsStale();
     }
@@ -336,32 +350,55 @@ export interface ImBootOptions {
   token?: string;
 }
 
-/** 启动连接（在 sidepanel / cmdk 入口调用） */
+/** 启动连接（在 sidepanel / cmdk 入口调用）。
+ *
+ * 幂等：可被入口首次调用、AppBoot 的「登录态补连」订阅、以及本函数内部装的
+ * token 轮换订阅反复触发，结果一致。
+ *
+ * 关键：**先 diff 再改 sdk.config**。早期实现是无条件覆盖 config 后再判断是否
+ * connect，导致一旦有第二个 auth 订阅者（AppBoot 的 tryStart）先于内部订阅跑，
+ * 就会把 config 改成新值，等内部订阅再比较 `next.token !== sdk.config.token`
+ * 时已相等 → 跳过 disconnect/connect，ws 仍连在旧 token 上。改为 applyAuth 内
+ * 先比对再决定 connect/重连，无论谁先触发都正确。
+ */
 export function startIm(opts: ImBootOptions = {}): void {
   setupIm();
   const sdk = WKSDK.shared();
+
+  // 把「用 auth 同步连接状态」收敛到一处：首连 / 续连 / 换号 都走这里，
+  // 先比对 sdk.config 再 mutate，避免覆盖后比较失真。
+  const applyAuth = (uid?: string, token?: string): void => {
+    if (!uid || !token) {
+      console.warn("[octo:im] startIm skipped: missing uid/token");
+      return;
+    }
+    if (!connectStarted) {
+      // 首次连接
+      sdk.config.uid = uid;
+      sdk.config.token = token;
+      console.info("[octo:im] connectManager.connect()", {
+        uid,
+        tokenFp: tokenFingerprint(token),
+      });
+      sdk.connectManager.connect();
+      connectStarted = true;
+      return;
+    }
+    // 已连接：仅当 uid/token 真的变了才重连（先比再改，顺序不能反）
+    if (token !== sdk.config.token || uid !== sdk.config.uid) {
+      console.info("[octo:im] auth changed → reconnect", { uid });
+      sdk.config.uid = uid;
+      sdk.config.token = token;
+      sdk.connectManager.disconnect();
+      sdk.connectManager.connect();
+    }
+  };
+
   const auth = useAuthStore.getState().state;
-  const uid = opts.uid ?? auth?.uid;
-  const token = opts.token ?? auth?.token;
-  if (!uid || !token) {
-    console.warn("[octo:im] startIm skipped: missing uid/token");
-    return;
-  }
+  applyAuth(opts.uid ?? auth?.uid, opts.token ?? auth?.token);
 
-  sdk.config.uid = uid;
-  sdk.config.token = token;
-
-  if (!connectStarted) {
-    console.info("[octo:im] connectManager.connect()", {
-      uid,
-      tokenLen: token.length,
-      tokenHead: `${token.slice(0, 6)}…${token.slice(-4)}`,
-    });
-    sdk.connectManager.connect();
-    connectStarted = true;
-  }
-
-  // 订阅 auth 变化：token 改变 → 重新连接
+  // 订阅 auth 变化：登出 → 断开；token/uid 变 → 重连。
+  // 与 AppBoot 的「登录态补连」订阅职责互补，且都走 applyAuth，幂等无害。
   unsubAuth?.();
   unsubAuth = useAuthStore.subscribe((s) => {
     const next = s.state;
@@ -369,12 +406,7 @@ export function startIm(opts: ImBootOptions = {}): void {
       stopIm();
       return;
     }
-    if (next.token !== sdk.config.token || next.uid !== sdk.config.uid) {
-      sdk.config.uid = next.uid;
-      sdk.config.token = next.token;
-      sdk.connectManager.disconnect();
-      sdk.connectManager.connect();
-    }
+    applyAuth(next.uid, next.token);
   });
 }
 

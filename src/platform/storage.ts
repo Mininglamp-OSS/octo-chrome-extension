@@ -1,4 +1,5 @@
 import { storage } from "wxt/utils/storage";
+import type { ImSlotClaim } from "@/im/slot";
 
 /**
  * 集中定义所有 chrome.storage key。命名空间用 `octo:extension:` 与 mirror 的 `dmwork:extension:`
@@ -88,5 +89,10 @@ export interface CmdkLastTarget {
 }
 export const cmdkLastTargetStorage = storage.defineItem<CmdkLastTarget | null>(
   "local:octo:extension:cmdk-last-target",
+  { fallback: null },
+);
+
+export const imSlotClaimStorage = storage.defineItem<ImSlotClaim | null>(
+  "local:octo:extension:im-slot-claim",
   { fallback: null },
 );

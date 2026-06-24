@@ -1,8 +1,14 @@
 import { browser } from "wxt/browser";
+import { isActiveImSlotClaim } from "@/im/slot";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { clearAllNotifications, notify } from "@/platform/notifications";
 import { openSidePanel } from "@/platform/sidePanel";
-import { authStorage, pendingConversationStorage, preferencesStorage } from "@/platform/storage";
+import {
+  authStorage,
+  imSlotClaimStorage,
+  pendingConversationStorage,
+  preferencesStorage,
+} from "@/platform/storage";
 import { setUnreadBadge } from "./badge";
 import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen";
 
@@ -25,6 +31,8 @@ import { closeOffscreenDocument, ensureOffscreenDocument } from "./offscreen";
  */
 
 const SIDEPANEL_ACTIVE_TTL_MS = 5_000;
+/** 过期 cmdk slot claim 的 durable 清理 alarm 名 */
+const IM_SLOT_CLEANUP_ALARM = "im-slot-cleanup";
 
 let lastSidepanelActiveAt = 0;
 let lastSidepanelHasUnread = false;
@@ -49,6 +57,8 @@ function recomputeBadge(): void {
 }
 
 async function bringUpOffscreenIfLoggedIn(): Promise<void> {
+  if (sidepanelActive()) return;
+  if (isActiveImSlotClaim(await imSlotClaimStorage.getValue())) return;
   const auth = await authStorage.getValue();
   if (auth?.loggedIn) {
     await ensureOffscreenDocument();
@@ -81,8 +91,39 @@ function startTtlCheck(): void {
   }, 2_000);
 }
 
+function setupImSlotClaimWatch(): void {
+  imSlotClaimStorage.watch((claim) => {
+    if (isActiveImSlotClaim(claim)) {
+      void closeOffscreenDocument();
+      return;
+    }
+    void bringUpOffscreenIfLoggedIn();
+  });
+
+  // claim 过期自愈：cmdk 非正常退出（崩溃/强杀/浏览器关闭）时 releaseImSlot IPC
+  // 不会发、unmount cleanup 也不跑 → claim 残留在 storage。它逻辑上过期后，
+  // storage 本身不再变化，watch 永不重触发 → offscreen/sidepanel 会被永久 block。
+  //
+  // 必须用 chrome.alarms 而非 setInterval：MV3 service worker ~30s idle 即被杀，
+  // setInterval 随之失效、不再续命（badge.ts 同款认知）；alarms 是 MV3 下唯一能
+  // 在 SW 休眠后仍按时唤醒 SW 的 durable 定时器。alarm 触发时清掉过期 claim →
+  // 写 null → 上面 watch 重跑 → bringUpOffscreenIfLoggedIn 恢复后台连接。
+  // periodInMinutes 用 0.5（30s）：这是 Chrome 生产环境 alarms 的最小被遵守周期
+  // （低于 0.5 才会被忽略+警告），30s 合法。这里只是过期 claim 的 durable 兜底，
+  // 前台 expiryTimer 已覆盖 sidepanel 开着的常见场景，30s 已足够及时。
+  browser.alarms.create(IM_SLOT_CLEANUP_ALARM, { periodInMinutes: 0.5 });
+  browser.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== IM_SLOT_CLEANUP_ALARM) return;
+    void imSlotClaimStorage.getValue().then(async (claim) => {
+      if (!claim || isActiveImSlotClaim(claim)) return;
+      await imSlotClaimStorage.setValue(null);
+    });
+  });
+}
+
 export function setupNotifications(): void {
   startTtlCheck();
+  setupImSlotClaimWatch();
 
   // 初始化 + 监听角标总开关
   void preferencesStorage.getValue().then((prefs) => {

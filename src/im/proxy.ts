@@ -1,5 +1,5 @@
 import type { Message } from "wukongimjssdk";
-import { Channel } from "wukongimjssdk";
+import WKSDK, { Channel } from "wukongimjssdk";
 import {
   ConnectStatus,
   isImConnected,
@@ -37,6 +37,20 @@ export async function imSendMessage(req: SendMessageReq): Promise<string> {
   // 入口快速失败：ws 未连接时直接 reject，避免 SDK fire-and-forget 静默吞包后
   // 让用户等 10s 才看到红 ❌。可见性提示由调用方（Composer）的 catch toast 负责。
   if (!isImConnected()) {
+    // 报「IM 未连接」时把当时 SDK 的真实连接态打出来，区分：
+    //  - 从未连上（status 一直 Disconnect/Connecting）
+    //  - 连上后掉线（之前 connectStatus 日志里有过 Connected）
+    //  - cmdk/sidepanel 持的是哪份实例没 startIm
+    const sdk = WKSDK.shared();
+    console.warn("[octo:im] imSendMessage rejected: not connected", {
+      sdkStatus: sdk.connectManager.status,
+      statusName: ConnectStatus[sdk.connectManager.status] ?? String(sdk.connectManager.status),
+      connected: sdk.connectManager.connected(),
+      hasUid: !!sdk.config.uid,
+      hasToken: !!sdk.config.token,
+      channelId: req.channelId,
+      channelType: req.channelType,
+    });
     throw new ImNotConnectedError();
   }
   const content = rehydrateContent(req.content);

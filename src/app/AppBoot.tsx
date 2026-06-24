@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { setApiUrl } from "@/api/client";
 import { DEFAULT_API_URL } from "@/api/endpoints";
 import { useApplyTheme } from "@/hooks/useApplyTheme";
 import { setupIm, startIm, stopIm } from "@/im/client";
+import {
+  CMDK_IM_SLOT_REFRESH_MS,
+  createCmdkImSlotClaim,
+  isActiveImSlotClaim,
+} from "@/im/slot";
 import { registerAllRenders } from "@/messages/renders";
+import { sendMessage } from "@/platform/messaging";
+import { imSlotClaimStorage } from "@/platform/storage";
 import { selectIsLogined, useAuthStore } from "@/stores/auth";
 import { useCurrentChannel } from "@/stores/currentChannel";
 import { usePreferencesStore } from "@/stores/preferences";
@@ -24,7 +31,18 @@ registerAllRenders();
  *
  * children 在 hydrate 完成前不渲染，避免闪烁。
  */
-export function AppBoot({ children }: { children: React.ReactNode }) {
+export function AppBoot({
+  children,
+  claimImSlot = false,
+  enableIm = true,
+  onImSlotClaimed,
+}: {
+  children: React.ReactNode;
+  claimImSlot?: boolean;
+  enableIm?: boolean;
+  /** claim 生成后回调出 id —— cmdk 用它把 id 传给父帧，父帧拆 iframe 前可靠释放 */
+  onImSlotClaimed?: (id: string) => void;
+}) {
   useApplyTheme();
   const [ready, setReady] = useState(false);
 
@@ -36,6 +54,16 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
   const subSpace = useSpaceStore((s) => s.subscribe);
   const subPrefs = usePreferencesStore((s) => s.subscribe);
   const apiUrl = usePreferencesStore((s) => s.prefs.apiUrl);
+  const [imSlotReady, setImSlotReady] = useState(!claimImSlot);
+  const [blockedByImSlot, setBlockedByImSlot] = useState(false);
+  // 「当前 claim 是否已读出」门闩：blockedByImSlot 的初值是 false，但判断它要先异步
+  // getValue()。裸 sidepanel（!claimImSlot）若在这次读 resolve 前就跑 startIm
+  // (deviceFlag=2)，会在 cmdk 正持有有效 claim 时把 cmdk 连接踢掉。故只有真正走
+  // block-effect 的场景（enableIm && !claimImSlot）才需要等首读；其余（cmdk 自己
+  // 声明 claim、或 enableIm=false 不连）无需等，初值即 true，避免卡死。
+  const [imSlotStateReady, setImSlotStateReady] = useState(!(enableIm && !claimImSlot));
+  const imSlotClaimIdRef = useRef<string | null>(null);
+  const imSlotMountedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,18 +98,117 @@ export function AppBoot({ children }: { children: React.ReactNode }) {
     setApiUrl(apiUrl?.trim() || DEFAULT_API_URL);
   }, [apiUrl]);
 
-  // 启动 IM 长连接 —— 必须在 hydrate 完成后（要 auth.token），且 sidepanel 卸载时 stop
   useEffect(() => {
-    if (!ready) return;
-    setupIm();
-    if (selectIsLogined(useAuthStore.getState())) {
-      startIm();
-    }
+    if (!claimImSlot) return;
+    const id = imSlotClaimIdRef.current ?? crypto.randomUUID();
+    imSlotClaimIdRef.current = id;
+    imSlotMountedRef.current = true;
+    // 把 id 回调出去：cmdk 据此把 id 传给父帧 content script。iframe 被父帧硬移除时
+    // 本组件的 effect cleanup 不会跑（JS realm 同步销毁），deferred releaseImSlot
+    // 永不触发 → claim 残留到 TTL 才过期；父帧持有 id 即可在拆 iframe 前可靠释放。
+    onImSlotClaimed?.(id);
+    let cancelled = false;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const claim = async () => {
+      const value = createCmdkImSlotClaim(id);
+      let granted = true;
+      try {
+        // 单 owner 仲裁：另一个 cmdk 实例（多 tab）已持槽时 background 返回 false。
+        // 抢不到就不让本实例连 IM（imSlotReady 保持/置 false），避免两个 deviceFlag=2
+        // 连接互踢——这正是本 PR 要消除的故障。
+        granted = (await sendMessage("claimImSlot", { claim: value })) !== false;
+      } catch {
+        // IPC 不通的极端情况：回退直写 storage，无从仲裁，按放行处理
+        await imSlotClaimStorage.setValue(value);
+      }
+      if (!cancelled) setImSlotReady(granted);
+    };
+    void claim();
+    timer = setInterval(() => void claim(), CMDK_IM_SLOT_REFRESH_MS);
+    // pagehide 兜底：用户直接关 tab（父帧 CmdKOverlay 一并卸载、来不及 release）时
+    // 尽力发一次 release。unload 期异步 IPC 不保证送达，故仅作 best-effort，最终
+    // 仍由 background alarm + TTL 兜底；正常关闭 cmdk 的可靠释放走父帧按 id release。
+    const onPageHide = () => {
+      void sendMessage("releaseImSlot", { id }).catch(() => {});
+    };
+    window.addEventListener("pagehide", onPageHide);
     return () => {
+      cancelled = true;
+      imSlotMountedRef.current = false;
+      if (timer) clearInterval(timer);
+      window.removeEventListener("pagehide", onPageHide);
+      setTimeout(() => {
+        if (imSlotMountedRef.current) return;
+        void sendMessage("releaseImSlot", { id }).catch(() => {
+          void imSlotClaimStorage.getValue().then((current) => {
+            if (current?.id === id) void imSlotClaimStorage.setValue(null);
+          });
+        });
+      }, 500);
+    };
+  }, [claimImSlot, onImSlotClaimed]);
+
+  useEffect(() => {
+    if (!enableIm) return;
+    if (claimImSlot) return;
+    let cancelled = false;
+    // 本地 TTL 自愈：claim 是 active 时排一个定时器到它 expiresAt 那一刻重跑 apply。
+    // 否则 cmdk 非正常退出残留 claim 后，storage 不再变化、watch 不再触发，本进程
+    // 会一直 blockedByImSlot=true 把 IM stop 住——光靠 background alarm 清理有延迟
+    // 且依赖 SW 被唤醒；前台自己排一刀让 sidepanel 在 claim 过期瞬间立即恢复连接。
+    let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+    const apply = (claim: Awaited<ReturnType<typeof imSlotClaimStorage.getValue>>) => {
+      if (cancelled) return;
+      if (expiryTimer) {
+        clearTimeout(expiryTimer);
+        expiryTimer = null;
+      }
+      const blocked = isActiveImSlotClaim(claim);
+      setBlockedByImSlot(blocked);
+      if (blocked) {
+        stopIm();
+        const ms = Math.max(0, (claim as { expiresAt: number }).expiresAt - Date.now());
+        expiryTimer = setTimeout(() => apply(claim), ms + 50);
+      }
+    };
+    void imSlotClaimStorage.getValue().then((claim) => {
+      apply(claim);
+      // 首读已 resolve：放行启动 gate（此前 startIm 被 imSlotStateReady 挡住，
+      // 避免在「claim 未知」窗口里抢连踢掉持槽的 cmdk）
+      if (!cancelled) setImSlotStateReady(true);
+    });
+    const unwatch = imSlotClaimStorage.watch(apply);
+    return () => {
+      cancelled = true;
+      if (expiryTimer) clearTimeout(expiryTimer);
+      unwatch();
+    };
+  }, [claimImSlot, enableIm]);
+
+  // 启动 IM 长连接 —— 必须在 hydrate 完成后（要 auth.token），且卸载时 stop。
+  //
+  // 不能只在 ready 翻转那一刻判断一次登录态：cmdk 是用户触发时才挂载的独立 iframe，
+  // 它的 hydrate 完成（ready=true）可能早于 auth storage 同步出登录态，导致 startIm
+  // 被 selectIsLogined 跳过后再也不重试 —— 表现为 sdk.config.uid/token 为空、
+  // connectManager 一直 Disconnect、发消息报「IM 未连接」。
+  //
+  // 改为：ready 后先尝一次，并订阅 auth 变化，登录态从无到有时补连（startIm 内部
+  // connectStarted 幂等，重复调用安全）。
+  useEffect(() => {
+    if (!enableIm) return;
+    if (!ready || !imSlotReady || !imSlotStateReady || blockedByImSlot) return;
+    setupIm();
+    const tryStart = () => {
+      if (selectIsLogined(useAuthStore.getState())) startIm();
+    };
+    tryStart();
+    const unsub = useAuthStore.subscribe(tryStart);
+    return () => {
+      unsub();
       stopIm();
     };
-  }, [ready]);
+  }, [ready, enableIm, imSlotReady, imSlotStateReady, blockedByImSlot]);
 
-  if (!ready) return null;
+  if (!ready || !imSlotReady) return null;
   return <>{children}</>;
 }

@@ -1,7 +1,9 @@
 import { browser } from "wxt/browser";
+import { shouldGrantClaim } from "@/im/slot";
 import { onMessage, sendMessage } from "@/platform/messaging";
 import { openSidePanel } from "@/platform/sidePanel";
-import { pendingConversationStorage } from "@/platform/storage";
+import { imSlotClaimStorage, pendingConversationStorage } from "@/platform/storage";
+import { closeOffscreenDocument } from "./offscreen";
 
 export function setupHandlers(): void {
   // 用户点工具栏图标 → 打开 sidepanel
@@ -37,5 +39,21 @@ export function setupHandlers(): void {
   onMessage("getAuthState", async () => {
     const value = await (await import("@/platform/storage")).authStorage.getValue();
     return { auth: value };
+  });
+
+  onMessage("claimImSlot", async ({ data }) => {
+    // 单 owner 仲裁：已有他人的 active claim 时拒绝，防止两个 cmdk 实例（多 tab）
+    // 都抢到槽位、都连 deviceFlag=2 互踢。无 claim / 已过期 / 同 id 续期 → 放行。
+    const current = await imSlotClaimStorage.getValue();
+    if (!shouldGrantClaim(current, data.claim)) return false;
+    await imSlotClaimStorage.setValue(data.claim);
+    await closeOffscreenDocument();
+    return true;
+  });
+
+  onMessage("releaseImSlot", async ({ data }) => {
+    const current = await imSlotClaimStorage.getValue();
+    if (current?.id !== data.id) return;
+    await imSlotClaimStorage.setValue(null);
   });
 }
